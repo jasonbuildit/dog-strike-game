@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DogStrike: Union Strong</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <style>
+        body { margin: 0; background-color: #2e1a2d; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Courier New', Courier, monospace; }
+        #game-container { border: 5px solid #d4af37; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+
+<script>
+/**
+ * DOGSTRIKE: GAME BACKBONE
+ * Motif: 1930s Art Deco / Canine Union vs. Industrial Robots
+ */
+
+class BootScene extends Phaser.Scene {
+    constructor() { super('BootScene'); }
+    preload() {
+        // Placeholder Assets - You would replace these URLs with your downloaded images
+        this.load.image('hero_saint', 'assets/dog_st_bernard.png'); // Senior Canine Union
+        this.load.image('enemy_enforcer', 'assets/robot_enforcer.png'); // Industrial Enforcer
+        this.load.image('boss_chronos', 'assets/boss_brain.png'); // Chronos Cognitron
+        this.load.image('bg_factory', 'assets/art_deco_factory.png');
+    }
+    create() { this.scene.start('PlayScene'); }
+}
+
+class PlayScene extends Phaser.Scene {
+    constructor() { super('PlayScene'); }
+
+    create() {
+        // 1. World & Background
+        this.add.image(400, 300, 'bg_factory').setAlpha(0.3);
+        
+        // 2. Player Setup (The Union Leader)
+        this.player = this.physics.add.sprite(100, 450, 'hero_saint');
+        this.player.setCollideWorldBounds(true);
+        this.player.health = 100;
+
+        // 3. Enemy Group (The Robot Antagonists)
+        this.robots = this.physics.add.group();
+        this.spawnRobot();
+
+        // 4. Systems: Union Strength (UI)
+        this.unionStrength = 100;
+        this.strengthText = this.add.text(20, 20, 'UNION STRENGTH: 100%', { 
+            fontSize: '24px', 
+            fill: '#d4af37',
+            fontStyle: 'bold'
+        });
+
+        // 5. Controls
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.strikeKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+        // 6. Collisions
+        this.physics.add.overlap(this.player, this.robots, this.handleRobotCollision, null, this);
+    }
+
+    update() {
+        // Movement Logic
+        if (this.cursors.left.isDown) {
+            this.player.setVelocityX(-160);
+        } else if (this.cursors.right.isDown) {
+            this.player.setVelocityX(160);
+        } else {
+            this.player.setVelocityX(0);
+        }
+
+        // Strike Logic (The "Action")
+        if (Phaser.Input.Keyboard.JustDown(this.strikeKey)) {
+            this.performUnionStrike();
+        }
+    }
+
+    spawnRobot() {
+        let x = Phaser.Math.Between(400, 800);
+        let robot = this.robots.create(x, 450, 'enemy_enforcer');
+        robot.setVelocityX(-50);
+    }
+
+    performUnionStrike() {
+        // Logic for barking/striking to disable robots
+        console.log("DOG STRIKE ACTIVE!");
+        this.robots.children.entries.forEach(robot => {
+            if (Phaser.Math.Distance.BetweenPoints(this.player, robot) < 100) {
+                robot.destroy();
+                this.spawnRobot(); // Keep the cycle going
+            }
+        });
+    }
+
+    handleRobotCollision(player, robot) {
+        this.unionStrength -= 0.1; // Passive morale drain when bots are close
+        this.strengthText.setText(`UNION STRENGTH: ${Math.floor(this.unionStrength)}%`);
+        
+        if (this.unionStrength <= 0) {
+            this.scene.restart();
+        }
+    }
+}
+
+const config = {
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    parent: 'game-container',
+    physics: {
+        default: 'arcade',
+        arcade: { gravity: { y: 300 }, debug: false }
+    },
+    scene: [BootScene, PlayScene]
+};
+
+const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
