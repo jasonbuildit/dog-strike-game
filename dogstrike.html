@@ -22,10 +22,10 @@ class BootScene extends Phaser.Scene {
     constructor() { super('BootScene'); }
     preload() {
         // Placeholder Assets - You would replace these URLs with your downloaded images
-        this.load.image('hero_saint', 'assets/dog_st_bernard.png'); // Senior Canine Union
-        this.load.image('enemy_enforcer', 'assets/robot_enforcer.png'); // Industrial Enforcer
-        this.load.image('boss_chronos', 'assets/boss_brain.png'); // Chronos Cognitron
-        this.load.image('bg_factory', 'assets/art_deco_factory.png');
+        this.load.image('hero_saint', '/assets/dogs/Image_15ecaxv715eca715ec (4).png'); // Senior Canine Union
+        this.load.image('enemy_enforcer', '/assets/bads/image_8amq0i8amq0i8amq.png'); // Industrial Enforcer
+        this.load.image('boss_chronos', '/assets/bads/Image_j17jxcvbwj17jbwj17j.png'); // Chronos Cognitron
+        this.load.image('bg_factory', '/assets/background/Image_1u3gw41u3gw41u3g.png'); //poop
     }
     create() { this.scene.start('PlayScene'); }
 }
