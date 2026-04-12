@@ -56,7 +56,7 @@ const C = {
 const HEROES = {
     saint: {
         id: 'saint', name: 'St. Bernard', role: 'Union Leader',
-        spriteKey: 'hero_saint', cardKey: 'hero_saint_card', color: 0xe8c45a, colorS: '#e8c45a',
+        spriteKey: 'hero_saint', cardKey: 'hero_saint_card', sheetKey: 'hero_saint_sheet', color: 0xe8c45a, colorS: '#e8c45a',
         speed: 180, strikeRange: 120, strikeCD: 25,
         powerName: 'UNITY HOWL',
         powerDesc: 'Full-screen shockwave — clears all active robots',
@@ -64,7 +64,7 @@ const HEROES = {
     },
     shepherd: {
         id: 'shepherd', name: 'German Shepherd', role: 'Field Commander',
-        spriteKey: 'hero_shepherd', cardKey: 'hero_shepherd_card', color: 0x8b9e6c, colorS: '#8b9e6c',
+        spriteKey: 'hero_shepherd', cardKey: 'hero_shepherd_card', sheetKey: 'hero_shepherd_sheet', color: 0x8b9e6c, colorS: '#8b9e6c',
         speed: 200, strikeRange: 95, strikeCD: 20,
         powerName: 'AUTHORITY BARK',
         powerDesc: 'Directional shockwave — flings all robots off-screen',
@@ -72,7 +72,7 @@ const HEROES = {
     },
     dachshund: {
         id: 'dachshund', name: 'Dachshund', role: 'Tech Saboteur',
-        spriteKey: 'hero_dachshund', cardKey: 'hero_dachshund_card', color: 0xc1440e, colorS: '#c1440e',
+        spriteKey: 'hero_dachshund', cardKey: 'hero_dachshund_card', sheetKey: 'hero_dachshund_sheet', color: 0xc1440e, colorS: '#c1440e',
         speed: 220, strikeRange: 80, strikeCD: 18,
         powerName: 'TECH SABOTAGE',
         powerDesc: 'Breaks shields — destroys all shielded & heavy robots',
@@ -111,6 +111,217 @@ function drawDecoEyeStatic(scene, x, y, color, alpha) {
     g.strokeCircle(x, y, 7);
     g.fillStyle(color, a * 0.6);
     g.fillCircle(x, y, 3);
+}
+
+// ─── HERO FRAME ANIMATION GENERATION ─────────────────────────────────────────
+// Procedurally generates 8-frame spritesheets per hero via Canvas 2D.
+// Frame map:  0-1 = idle (breathing)  |  2-5 = walk cycle  |  6 = jump  |  7 = strike
+// Canvas size: 64px × 80px per frame, 8 frames wide (512 × 80 total per hero).
+
+function _rrPath(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+}
+
+function _dogPose(f) {
+    // bodyLean: body rotation (radians)  bLX/fLX: back/front leg center X offset from cx
+    // bRot/fRot: leg rotation  headY: vertical head offset  strike: extend punch arm
+    const p = [
+        { bodyLean: 0,     bLX: -5,  fLX:  5, headY:  0, bRot:  0,    fRot:  0    }, // 0 idle A
+        { bodyLean: 0,     bLX: -5,  fLX:  5, headY: -1, bRot:  0,    fRot:  0    }, // 1 idle B
+        { bodyLean: 0.07,  bLX: -9,  fLX: 10, headY:  1, bRot: -0.28, fRot:  0.22 }, // 2 walk A
+        { bodyLean: 0,     bLX: -4,  fLX:  4, headY:  0, bRot:  0,    fRot:  0    }, // 3 walk B
+        { bodyLean:-0.07,  bLX: 10,  fLX: -9, headY:  1, bRot:  0.22, fRot: -0.28 }, // 4 walk C
+        { bodyLean: 0,     bLX: -4,  fLX:  4, headY:  0, bRot:  0,    fRot:  0    }, // 5 walk D
+        { bodyLean: 0,     bLX: -4,  fLX:  4, headY: -4, bRot: -0.55, fRot: -0.55 }, // 6 jump
+        { bodyLean:-0.18,  bLX: -8,  fLX: 12, headY:  0, bRot: -0.1,  fRot:  0.15, strike: true }, // 7 strike
+    ];
+    return p[Math.min(f, p.length - 1)];
+}
+
+function _drawEars(ctx, hx, hy, cfg) {
+    ctx.fillStyle = cfg.pc;
+    if (cfg.ears === 'floppy') {
+        ctx.save(); ctx.translate(hx - cfg.hRx * 0.68, hy);
+        ctx.beginPath(); ctx.ellipse(0, 7, 5, 11, -0.25, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        ctx.save(); ctx.translate(hx + cfg.hRx * 0.68, hy);
+        ctx.beginPath(); ctx.ellipse(0, 7, 5, 11,  0.25, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    } else if (cfg.ears === 'pointed') {
+        ctx.beginPath();
+        ctx.moveTo(hx - cfg.hRx * 0.5, hy - 4); ctx.lineTo(hx - cfg.hRx * 0.85, hy - 19);
+        ctx.lineTo(hx - cfg.hRx * 0.18, hy - 6); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(hx + cfg.hRx * 0.5, hy - 4); ctx.lineTo(hx + cfg.hRx * 0.85, hy - 19);
+        ctx.lineTo(hx + cfg.hRx * 0.18, hy - 6); ctx.closePath(); ctx.fill();
+    } else if (cfg.ears === 'floppy_low') {
+        ctx.save(); ctx.translate(hx - cfg.hRx * 0.6, hy + 3);
+        ctx.beginPath(); ctx.ellipse(0, 9, 5, 13, -0.4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        ctx.save(); ctx.translate(hx + cfg.hRx * 0.6, hy + 3);
+        ctx.beginPath(); ctx.ellipse(0, 9, 5, 13,  0.4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
+}
+
+function _drawHat(ctx, hx, hy, hRy, cfg) {
+    const hTop = hy - hRy;
+    if (cfg.hat === 'cap') {
+        // Flat union organizer cap with brim and gold band
+        ctx.beginPath(); ctx.ellipse(hx + 3, hTop + 5, hRy + 4, 4, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.hatC; ctx.fill();
+        _rrPath(ctx, hx - hRy + 1, hTop - hRy + 2, (hRy - 1) * 2, hRy + 4, 3);
+        ctx.fillStyle = cfg.hatC; ctx.fill();
+        _rrPath(ctx, hx - hRy + 1, hTop + 1, (hRy - 1) * 2, 4, 2);
+        ctx.fillStyle = cfg.hatA; ctx.fill();
+    } else if (cfg.hat === 'beret') {
+        // Military beret tilted right, with badge dot
+        ctx.save(); ctx.translate(hx + 2, hTop + 2); ctx.rotate(-0.18);
+        ctx.beginPath(); ctx.ellipse(1, 0, hRy + 2, 5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.hatC; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(-1, -4, hRy - 2, 6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.hatC; ctx.fill();
+        ctx.beginPath(); ctx.arc(5, -6, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.hatA; ctx.fill();
+        ctx.restore();
+    } else if (cfg.hat === 'helmet') {
+        // Miner's hard hat with front lamp
+        ctx.beginPath(); ctx.ellipse(hx, hTop + 4, hRy + 5, 4, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.hatC; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(hx, hTop + 1, hRy + 3, hRy + 1, 0, Math.PI, 0, false);
+        ctx.fillStyle = cfg.hatC; ctx.fill();
+        ctx.save(); ctx.translate(hx + hRy * 0.72, hTop - 1); ctx.rotate(-0.3);
+        ctx.beginPath(); ctx.ellipse(0, 0, 4, 3, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.hatA; ctx.fill();
+        ctx.restore();
+    }
+}
+
+function _drawDogFrame(ctx, ox, oy, fw, fh, cfg, frameIdx) {
+    const cx   = ox + fw / 2;
+    const FOOT = oy + fh - 4;
+    const pose = _dogPose(frameIdx);
+
+    const LH = cfg.lH, LW = cfg.lW, BH = cfg.bH, BW = cfg.bW;
+    const legTopY  = FOOT - LH;
+    const bodyBotY = legTopY;
+    const bodyTopY = bodyBotY - BH + pose.headY * 0.3;
+    const headCY   = bodyTopY - cfg.hRy - 2 + pose.headY;
+
+    // Back leg (darker color, drawn behind body)
+    ctx.save(); ctx.translate(cx + pose.bLX, legTopY); ctx.rotate(pose.bRot);
+    _rrPath(ctx, -LW/2, 0, LW, LH, 3); ctx.fillStyle = cfg.dc; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, LH, LW * 0.75, 3.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = cfg.dc; ctx.fill(); ctx.restore();
+
+    // Tail (quadratic curve off the back of the body)
+    ctx.save(); ctx.strokeStyle = cfg.pc; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx + BW * 0.42, bodyTopY + BH * 0.35);
+    ctx.quadraticCurveTo(cx + BW * 0.42 + 11, bodyTopY + BH * 0.35 - 14,
+                         cx + BW * 0.42 + 7,  bodyTopY + BH * 0.35 - 26);
+    ctx.stroke(); ctx.restore();
+
+    // Body
+    ctx.save(); ctx.translate(cx, bodyTopY + BH / 2); ctx.rotate(pose.bodyLean);
+    _rrPath(ctx, -BW/2, -BH/2, BW, BH, 5); ctx.fillStyle = cfg.pc; ctx.fill();
+    _rrPath(ctx, -BW/2 + 4, BH/2 - 7, BW - 8, 5, 2); ctx.fillStyle = cfg.ac; ctx.fill();
+    ctx.restore();
+
+    // Strike arm (frame 7): extended arm with punch paw
+    if (pose.strike) {
+        ctx.save(); ctx.translate(cx - BW * 0.2 - 4, bodyTopY + BH * 0.32); ctx.rotate(-0.15);
+        _rrPath(ctx, 0, -4, 16, 7, 3); ctx.fillStyle = cfg.pc; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(21, 0, 7, 5.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.pc; ctx.fill();
+        ctx.fillStyle = cfg.dc;
+        for (let k = 0; k < 3; k++) {
+            ctx.beginPath(); ctx.arc(16 + k * 3, -1, 1.2, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // Front leg (primary color, drawn in front of body)
+    ctx.save(); ctx.translate(cx + pose.fLX, legTopY); ctx.rotate(pose.fRot);
+    _rrPath(ctx, -LW/2, 0, LW, LH, 3); ctx.fillStyle = cfg.pc; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, LH, LW * 0.75, 3.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = cfg.pc; ctx.fill(); ctx.restore();
+
+    // Ears (behind head)
+    _drawEars(ctx, cx, headCY, cfg);
+
+    // Head
+    ctx.beginPath(); ctx.ellipse(cx, headCY, cfg.hRx, cfg.hRy, 0, 0, Math.PI * 2);
+    ctx.fillStyle = cfg.pc; ctx.fill();
+
+    // Snout
+    ctx.save(); ctx.translate(cx + cfg.hRx - 3, headCY + 3);
+    ctx.beginPath(); ctx.ellipse(cfg.sL / 2, 0, cfg.sL / 2 + 2, cfg.sH / 2 + 1, 0, 0, Math.PI * 2);
+    ctx.fillStyle = cfg.ac; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cfg.sL + 1, -1, 3, 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = cfg.dc; ctx.fill(); ctx.restore();
+
+    // Eye + shine
+    const eX = cx + cfg.hRx * 0.22, eY = headCY - 2;
+    ctx.beginPath(); ctx.arc(eX, eY, 2.5, 0, Math.PI * 2); ctx.fillStyle = '#0d0810'; ctx.fill();
+    ctx.beginPath(); ctx.arc(eX + 1, eY - 1, 0.9, 0, Math.PI * 2); ctx.fillStyle = '#ffffff'; ctx.fill();
+
+    // Hat
+    _drawHat(ctx, cx, headCY, cfg.hRy, cfg);
+}
+
+function createHeroSpritesheets(scene) {
+    const FW = 64, FH = 80, NF = 8;
+    const CFGS = [
+        { id: 'saint',     key: 'hero_saint_sheet',
+          pc: '#e8c45a', dc: '#9a6214', ac: '#f5ead0', hatC: '#2a1608', hatA: '#d4af37',
+          ears: 'floppy',     hat: 'cap',
+          hRx: 11, hRy: 10, sL: 8,  sH: 5, bW: 26, bH: 24, lW: 9, lH: 19 },
+        { id: 'shepherd',  key: 'hero_shepherd_sheet',
+          pc: '#8b9e6c', dc: '#3d4e2c', ac: '#c8a96e', hatC: '#4a3a5a', hatA: '#2a9d8f',
+          ears: 'pointed',    hat: 'beret',
+          hRx: 10, hRy:  9, sL: 9,  sH: 4, bW: 24, bH: 22, lW: 8, lH: 18 },
+        { id: 'dachshund', key: 'hero_dachshund_sheet',
+          pc: '#c1440e', dc: '#7a2808', ac: '#e8a050', hatC: '#f0a010', hatA: '#ffee44',
+          ears: 'floppy_low', hat: 'helmet',
+          hRx: 10, hRy:  9, sL: 11, sH: 4, bW: 32, bH: 18, lW: 7, lH: 15 },
+    ];
+    CFGS.forEach(cfg => {
+        if (scene.textures.exists(cfg.key)) scene.textures.remove(cfg.key);
+        const cTex = scene.textures.createCanvas(cfg.key, FW * NF, FH);
+        const ctx  = cTex.getContext();
+        ctx.clearRect(0, 0, FW * NF, FH);
+        for (let f = 0; f < NF; f++) _drawDogFrame(ctx, f * FW, 0, FW, FH, cfg, f);
+        cTex.refresh();
+        for (let f = 0; f < NF; f++) cTex.add(f, 0, f * FW, 0, FW, FH);
+    });
+}
+
+function createHeroAnimations(scene) {
+    [
+        { id: 'saint',     key: 'hero_saint_sheet'     },
+        { id: 'shepherd',  key: 'hero_shepherd_sheet'  },
+        { id: 'dachshund', key: 'hero_dachshund_sheet' },
+    ].forEach(({ id, key }) => {
+        ['idle', 'walk', 'jump', 'strike'].forEach(a => {
+            if (scene.anims.exists(id + '_' + a)) scene.anims.remove(id + '_' + a);
+        });
+        scene.anims.create({ key: id + '_idle',
+            frames: [{ key, frame: 0 }, { key, frame: 1 }], frameRate: 3,  repeat: -1 });
+        scene.anims.create({ key: id + '_walk',
+            frames: [{ key, frame: 2 }, { key, frame: 3 }, { key, frame: 4 }, { key, frame: 5 }],
+            frameRate: 10, repeat: -1 });
+        scene.anims.create({ key: id + '_jump',
+            frames: [{ key, frame: 6 }], frameRate: 1, repeat: 0 });
+        scene.anims.create({ key: id + '_strike',
+            frames: [{ key, frame: 7 }, { key, frame: 0 }], frameRate: 14, repeat: 0 });
+    });
 }
 
 // ─── BOOT SCENE ──────────────────────────────────────────────────────────────
@@ -161,6 +372,8 @@ class BootScene extends Phaser.Scene {
                 if (!this.textures.exists(d.key)) this.makeRect(d.key, d.w, d.h, d.color);
             }
         });
+        createHeroSpritesheets(this);
+        createHeroAnimations(this);
         this.scene.start('TitleScene');
     }
 }
@@ -601,7 +814,7 @@ class PlayScene extends Phaser.Scene {
             this.ground.create(x + 32, GROUND_Y + 16, groundKey);
         }
 
-        this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.spriteKey);
+        this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.sheetKey, 0);
         this.player.setCollideWorldBounds(true);
         this.player.setDisplaySize(60, 80);
         // Store base scales so animation tweens can multiply from the correct baseline
@@ -643,9 +856,8 @@ class PlayScene extends Phaser.Scene {
         this.animState    = 'idle';
         this.walkPhase    = 0;
         this.walkTimer    = null;
-        this.idleTween    = null;
         this.prevGrounded = true;
-        this.startIdleAnim();
+        this.player.anims.play(this.hero.id + '_idle', true);
     }
 
     calcWaveCount() { return Math.min(3 + this.wave * 2, 20); }
@@ -784,8 +996,16 @@ class PlayScene extends Phaser.Scene {
         this.strikeCD = this.hero.strikeCD;
         const px = this.player.x, py = this.player.y;
 
-        // Strike lunge — forward lean + horizontal stretch, angle-only so it doesn't
-        // interfere with the walk/idle scale cycle running in parallel
+        // Show strike pose frame, then resume movement animation
+        this.player.anims.play(this.hero.id + '_strike', true);
+        this.time.delayedCall(160, () => {
+            if (!this.waveCleared && !this.gameOver) {
+                if (this.animState === 'walk') this.player.anims.play(this.hero.id + '_walk', true);
+                else this.player.anims.play(this.hero.id + '_idle', true);
+            }
+        });
+
+        // Strike lunge tween — visual forward-punch feel on top of frame animation
         this.tweens.add({
             targets: this.player,
             angle:  (this.player.flipX ? 1 : -1) * 22,
@@ -948,24 +1168,16 @@ class PlayScene extends Phaser.Scene {
 
     // ── PLAYER ANIMATION ─────────────────────────────────────────────────────
     startIdleAnim() {
-        if (this.idleTween) return;
-        this.player.setScale(this.player._bsx, this.player._bsy).setAngle(0);
-        this.idleTween = this.tweens.add({
-            targets: this.player,
-            scaleX: this.player._bsx * 1.05,
-            scaleY: this.player._bsy * 0.96,
-            duration: 750, ease: 'Sine.InOut',
-            yoyo: true, repeat: -1,
-        });
+        this.player.setAngle(0);
+        this.player.anims.play(this.hero.id + '_idle', true);
     }
 
-    stopIdleAnim() {
-        if (this.idleTween) { this.idleTween.stop(); this.idleTween = null; }
-    }
+    stopIdleAnim() { /* frame anims switch automatically on the next play() call */ }
 
     startWalkAnim() {
         if (this.walkTimer) return;
         this.walkPhase = 0;
+        this.player.anims.play(this.hero.id + '_walk', true);
         this.walkTimer = this.time.addEvent({
             delay: 130, callback: this.stepWalk, callbackScope: this, loop: true,
         });
@@ -973,16 +1185,8 @@ class PlayScene extends Phaser.Scene {
     }
 
     stepWalk() {
+        // Footstep dust puff on every other step; frame animation handles body pose
         const even = this.walkPhase % 2 === 0;
-        const dir  = this.player.flipX ? 1 : -1;
-        this.tweens.add({
-            targets: this.player,
-            angle:  even ? dir * 12 : -dir * 12,
-            scaleX: even ? this.player._bsx * 1.07 : this.player._bsx * 0.93,
-            scaleY: even ? this.player._bsy * 0.93 : this.player._bsy * 1.07,
-            duration: 115, ease: 'Sine.InOut',
-        });
-        // Footstep dust puff on every other step
         if (even && this.player.body.blocked.down) {
             const dx = this.player.x + (this.player.flipX ? 14 : -14);
             const dy = GROUND_Y - 2;
@@ -1002,18 +1206,15 @@ class PlayScene extends Phaser.Scene {
 
     stopWalkAnim() {
         if (this.walkTimer) { this.walkTimer.remove(); this.walkTimer = null; }
-        this.tweens.add({
-            targets: this.player,
-            angle: 0, scaleX: this.player._bsx, scaleY: this.player._bsy,
-            duration: 80,
-        });
+        this.tweens.add({ targets: this.player, angle: 0, duration: 80 });
     }
 
     playJumpAnim() {
+        this.player.anims.play(this.hero.id + '_jump', true);
         this.tweens.add({
             targets: this.player,
-            angle: 0, scaleX: this.player._bsx * 0.80, scaleY: this.player._bsy * 1.25,
-            duration: 120, ease: 'Quad.Out', yoyo: true, hold: 100,
+            scaleX: this.player._bsx * 0.82, scaleY: this.player._bsy * 1.22,
+            duration: 120, ease: 'Quad.Out', yoyo: true, hold: 80,
         });
     }
 
@@ -1028,8 +1229,7 @@ class PlayScene extends Phaser.Scene {
         const ring = this.add.ellipse(this.player.x, GROUND_Y - 2, 28, 10, this.hero.color, 0.55).setDepth(1);
         this.tweens.add({
             targets: ring,
-            scaleX: 4.5, scaleY: 1.6,
-            alpha: 0,
+            scaleX: 4.5, scaleY: 1.6, alpha: 0,
             duration: 320, ease: 'Quad.Out',
             onComplete: () => ring.destroy(),
         });
