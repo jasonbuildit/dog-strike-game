@@ -254,7 +254,18 @@ class HeroSelectScene extends Phaser.Scene {
         const card = this.add.rectangle(cx, cy, cardW, cardH, 0x1a0f1a, 0.95)
             .setStrokeStyle(1, locked ? 0x444444 : hero.color);
 
-        this.add.image(cx, cy - 70, hero.spriteKey).setDisplaySize(80, 90).setAlpha(locked ? 0.25 : 1);
+        const heroImg = this.add.image(cx, cy - 70, hero.spriteKey).setDisplaySize(80, 90).setAlpha(locked ? 0.25 : 1);
+        if (!locked) {
+            // Float each hero with a slightly different period so they move out of sync
+            this.tweens.add({
+                targets: heroImg,
+                y: cy - 70 - 8,
+                scaleX: 1.05, scaleY: 0.96,
+                duration: 780 + (num - 1) * 140,
+                ease: 'Sine.InOut',
+                yoyo: true, repeat: -1,
+            });
+        }
 
         if (locked) {
             this.add.text(cx, cy - 70, '🔒', { fontSize: '28px' }).setOrigin(0.5);
@@ -590,6 +601,9 @@ class PlayScene extends Phaser.Scene {
         this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.spriteKey);
         this.player.setCollideWorldBounds(true);
         this.player.setDisplaySize(56, 64);
+        // Store base scales so animation tweens can multiply from the correct baseline
+        this.player._bsx = this.player.scaleX;
+        this.player._bsy = this.player.scaleY;
         this.physics.add.collider(this.player, this.ground);
 
         this.robots = this.physics.add.group();
@@ -611,6 +625,14 @@ class PlayScene extends Phaser.Scene {
         this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
         this.strikeRing = this.add.circle(0, 0, 80, C.gold, 0).setDepth(10);
+
+        // Animation state
+        this.animState    = 'idle';
+        this.walkPhase    = 0;
+        this.walkTimer    = null;
+        this.idleTween    = null;
+        this.prevGrounded = true;
+        this.startIdleAnim();
     }
 
     calcWaveCount() { return Math.min(3 + this.wave * 2, 20); }
@@ -709,6 +731,35 @@ class PlayScene extends Phaser.Scene {
             this.time.delayedCall(400, () => this.showWaveCleared());
         }
 
+        // ── Player animation state machine ────────────────────────────────────
+        const grounded = this.player.body.blocked.down;
+        const moving   = Math.abs(this.player.body.velocity.x) > 20;
+
+        if (!grounded && this.prevGrounded) {
+            // Just left the ground — jump stretch
+            this.animState = 'jump';
+            this.stopIdleAnim();
+            this.stopWalkAnim();
+            this.playJumpAnim();
+        } else if (grounded && !this.prevGrounded) {
+            // Just landed — squash then restore
+            this.playLandAnim();
+            if (moving) { this.animState = 'walk'; this.startWalkAnim(); }
+            else          this.animState = 'idle';
+        } else if (grounded) {
+            if (moving && this.animState !== 'walk') {
+                this.animState = 'walk';
+                this.stopIdleAnim();
+                this.startWalkAnim();
+            } else if (!moving && this.animState !== 'idle') {
+                this.animState = 'idle';
+                this.stopWalkAnim();
+                this.startIdleAnim();
+            }
+        }
+        this.prevGrounded = grounded;
+        // ─────────────────────────────────────────────────────────────────────
+
         this.updateUI();
     }
 
@@ -716,6 +767,18 @@ class PlayScene extends Phaser.Scene {
     performStrike() {
         this.strikeCD = this.hero.strikeCD;
         const px = this.player.x, py = this.player.y;
+
+        // Strike lunge — forward lean + horizontal stretch, angle-only so it doesn't
+        // interfere with the walk/idle scale cycle running in parallel
+        this.tweens.add({
+            targets: this.player,
+            angle:  (this.player.flipX ? 1 : -1) * 22,
+            scaleX: this.player._bsx * 1.16,
+            scaleY: this.player._bsy * 0.84,
+            duration: 85, ease: 'Quad.Out',
+            yoyo: true,
+            onComplete: () => this.player.setAngle(0),
+        });
 
         this.strikeRing.setPosition(px, py).setAlpha(0.65).setScale(1);
         this.tweens.add({ targets: this.strikeRing, scaleX: 2.2, scaleY: 2.2, alpha: 0,
@@ -864,6 +927,71 @@ class PlayScene extends Phaser.Scene {
                     robot.isShielded = false;
                 }
             });
+        });
+    }
+
+    // ── PLAYER ANIMATION ─────────────────────────────────────────────────────
+    startIdleAnim() {
+        if (this.idleTween) return;
+        this.player.setScale(this.player._bsx, this.player._bsy).setAngle(0);
+        this.idleTween = this.tweens.add({
+            targets: this.player,
+            scaleX: this.player._bsx * 1.05,
+            scaleY: this.player._bsy * 0.96,
+            duration: 750, ease: 'Sine.InOut',
+            yoyo: true, repeat: -1,
+        });
+    }
+
+    stopIdleAnim() {
+        if (this.idleTween) { this.idleTween.stop(); this.idleTween = null; }
+    }
+
+    startWalkAnim() {
+        if (this.walkTimer) return;
+        this.walkPhase = 0;
+        this.walkTimer = this.time.addEvent({
+            delay: 130, callback: this.stepWalk, callbackScope: this, loop: true,
+        });
+        this.stepWalk();
+    }
+
+    stepWalk() {
+        const even = this.walkPhase % 2 === 0;
+        const dir  = this.player.flipX ? 1 : -1;
+        this.tweens.add({
+            targets: this.player,
+            angle:  even ? dir * 12 : -dir * 12,
+            scaleX: even ? this.player._bsx * 1.07 : this.player._bsx * 0.93,
+            scaleY: even ? this.player._bsy * 0.93 : this.player._bsy * 1.07,
+            duration: 115, ease: 'Sine.InOut',
+        });
+        this.walkPhase++;
+    }
+
+    stopWalkAnim() {
+        if (this.walkTimer) { this.walkTimer.remove(); this.walkTimer = null; }
+        this.tweens.add({
+            targets: this.player,
+            angle: 0, scaleX: this.player._bsx, scaleY: this.player._bsy,
+            duration: 80,
+        });
+    }
+
+    playJumpAnim() {
+        this.tweens.add({
+            targets: this.player,
+            angle: 0, scaleX: this.player._bsx * 0.80, scaleY: this.player._bsy * 1.25,
+            duration: 120, ease: 'Quad.Out', yoyo: true, hold: 100,
+        });
+    }
+
+    playLandAnim() {
+        this.tweens.add({
+            targets: this.player,
+            angle: 0, scaleX: this.player._bsx * 1.32, scaleY: this.player._bsy * 0.70,
+            duration: 75, ease: 'Quad.Out', yoyo: true,
+            onComplete: () => { if (this.animState === 'idle') this.startIdleAnim(); },
         });
     }
 
