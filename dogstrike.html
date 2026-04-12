@@ -56,7 +56,7 @@ const C = {
 const HEROES = {
     saint: {
         id: 'saint', name: 'St. Bernard', role: 'Union Leader',
-        spriteKey: 'hero_saint', color: 0xe8c45a, colorS: '#e8c45a',
+        spriteKey: 'hero_saint', cardKey: 'hero_saint_card', color: 0xe8c45a, colorS: '#e8c45a',
         speed: 180, strikeRange: 120, strikeCD: 25,
         powerName: 'UNITY HOWL',
         powerDesc: 'Full-screen shockwave — clears all active robots',
@@ -64,7 +64,7 @@ const HEROES = {
     },
     shepherd: {
         id: 'shepherd', name: 'German Shepherd', role: 'Field Commander',
-        spriteKey: 'hero_shepherd', color: 0x8b9e6c, colorS: '#8b9e6c',
+        spriteKey: 'hero_shepherd', cardKey: 'hero_shepherd_card', color: 0x8b9e6c, colorS: '#8b9e6c',
         speed: 200, strikeRange: 95, strikeCD: 20,
         powerName: 'AUTHORITY BARK',
         powerDesc: 'Directional shockwave — flings all robots off-screen',
@@ -72,7 +72,7 @@ const HEROES = {
     },
     dachshund: {
         id: 'dachshund', name: 'Dachshund', role: 'Tech Saboteur',
-        spriteKey: 'hero_dachshund', color: 0xc1440e, colorS: '#c1440e',
+        spriteKey: 'hero_dachshund', cardKey: 'hero_dachshund_card', color: 0xc1440e, colorS: '#c1440e',
         speed: 220, strikeRange: 80, strikeCD: 18,
         powerName: 'TECH SABOTAGE',
         powerDesc: 'Breaks shields — destroys all shielded & heavy robots',
@@ -120,9 +120,12 @@ class BootScene extends Phaser.Scene {
     preload() {
         this.failedKeys = new Set();
         this.assetDefs = [
-            { key: 'hero_saint',     path: './assets/dogs/Image_15ecaxv715eca7.png',          w: 64,  h: 72,  color: 0xe8c45a },
-            { key: 'hero_shepherd',  path: './assets/dogs/Image_r6yk5mxcvr6yk5mr6yk.png',    w: 64,  h: 72,  color: 0x8b9e6c },
-            { key: 'hero_dachshund', path: './assets/dogs/Image_v6bx70v6bx70v6zxcbx.png',    w: 48,  h: 56,  color: 0xc1440e },
+            { key: 'hero_saint',          path: './assets/dogs/hero_saint_body.png',       w: 60,  h: 80,  color: 0xe8c45a },
+            { key: 'hero_shepherd',       path: './assets/dogs/hero_shepherd_body.png',    w: 60,  h: 80,  color: 0x8b9e6c },
+            { key: 'hero_dachshund',      path: './assets/dogs/hero_dachshund_body.png',   w: 60,  h: 80,  color: 0xc1440e },
+            { key: 'hero_saint_card',     path: './assets/dogs/hero_saint_card.png',       w: 130, h: 130, color: 0xe8c45a },
+            { key: 'hero_shepherd_card',  path: './assets/dogs/hero_shepherd_card.png',    w: 130, h: 130, color: 0x8b9e6c },
+            { key: 'hero_dachshund_card', path: './assets/dogs/hero_dachshund_card.png',   w: 130, h: 130, color: 0xc1440e },
             { key: 'enemy_enforcer', path: './assets/bads/image_8amq0i8amq0i8amq.png',        w: 52,  h: 68,  color: 0x607d8b },
             { key: 'enemy_heavy',    path: './assets/bads/Image_m7yyyp97yyyp97yy.png',        w: 64,  h: 80,  color: 0x455a64 },
             { key: 'enemy_admin',    path: './assets/bads/Image_n3fa04n3fa04n3fa.png',         w: 56,  h: 72,  color: 0x9c6b2e },
@@ -254,13 +257,13 @@ class HeroSelectScene extends Phaser.Scene {
         const card = this.add.rectangle(cx, cy, cardW, cardH, 0x1a0f1a, 0.95)
             .setStrokeStyle(1, locked ? 0x444444 : hero.color);
 
-        const heroImg = this.add.image(cx, cy - 70, hero.spriteKey).setDisplaySize(80, 90).setAlpha(locked ? 0.25 : 1);
+        const heroImg = this.add.image(cx, cy - 62, hero.cardKey).setDisplaySize(130, 130).setAlpha(locked ? 0.2 : 1);
         if (!locked) {
             // Float each hero with a slightly different period so they move out of sync
             this.tweens.add({
                 targets: heroImg,
-                y: cy - 70 - 8,
-                scaleX: 1.05, scaleY: 0.96,
+                y: cy - 62 - 8,
+                scaleX: 1.04, scaleY: 0.97,
                 duration: 780 + (num - 1) * 140,
                 ease: 'Sine.InOut',
                 yoyo: true, repeat: -1,
@@ -268,27 +271,27 @@ class HeroSelectScene extends Phaser.Scene {
         }
 
         if (locked) {
-            this.add.text(cx, cy - 70, '🔒', { fontSize: '28px' }).setOrigin(0.5);
-            this.add.text(cx, cy - 18, 'UNLOCK\nWAVE ' + (hero.id === 'shepherd' ? 4 : 7), {
+            this.add.text(cx, cy - 62, '🔒', { fontSize: '36px' }).setOrigin(0.5);
+            this.add.text(cx, cy - 10, 'UNLOCK\nWAVE ' + (hero.id === 'shepherd' ? 4 : 7), {
                 fontSize: '11px', fill: '#888', align: 'center'
             }).setOrigin(0.5);
         }
 
-        this.add.text(cx, cy + 20, hero.name.toUpperCase(), {
+        this.add.text(cx, cy + 12, hero.name.toUpperCase(), {
             fontSize: '13px', fill: locked ? '#555' : C.goldS, fontStyle: 'bold', letterSpacing: 1
         }).setOrigin(0.5);
-        this.add.text(cx, cy + 40, hero.role, { fontSize: '10px', fill: locked ? '#444' : C.creamS }).setOrigin(0.5);
+        this.add.text(cx, cy + 30, hero.role, { fontSize: '10px', fill: locked ? '#444' : C.creamS }).setOrigin(0.5);
 
         const lg = this.add.graphics();
         lg.lineStyle(1, locked ? 0x333333 : hero.color, locked ? 0.2 : 0.5);
-        lg.lineBetween(cx - 70, cy + 56, cx + 70, cy + 56);
+        lg.lineBetween(cx - 70, cy + 46, cx + 70, cy + 46);
 
-        this.add.text(cx, cy + 74, hero.powerName, {
+        this.add.text(cx, cy + 62, hero.powerName, {
             fontSize: '10px', fill: locked ? '#444' : C.tealS, fontStyle: 'bold', letterSpacing: 2
         }).setOrigin(0.5);
 
         this.wrapText(hero.powerDesc, 22).forEach((line, li) => {
-            this.add.text(cx, cy + 92 + li * 16, line, { fontSize: '10px', fill: locked ? '#333' : '#aaa', align: 'center' }).setOrigin(0.5);
+            this.add.text(cx, cy + 78 + li * 16, line, { fontSize: '10px', fill: locked ? '#333' : '#aaa', align: 'center' }).setOrigin(0.5);
         });
 
         this.add.text(cx, cy + cardH / 2 - 22, locked ? '—' : '[' + num + ']', {
@@ -600,10 +603,20 @@ class PlayScene extends Phaser.Scene {
 
         this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.spriteKey);
         this.player.setCollideWorldBounds(true);
-        this.player.setDisplaySize(56, 64);
+        this.player.setDisplaySize(60, 80);
         // Store base scales so animation tweens can multiply from the correct baseline
         this.player._bsx = this.player.scaleX;
         this.player._bsy = this.player.scaleY;
+
+        // Hero aura — colored elliptical glow at feet, pulses with hero color
+        this.heroAura = this.add.ellipse(120, GROUND_Y - 4, 70, 18, this.hero.color, 0).setDepth(0);
+        this.tweens.add({
+            targets: this.heroAura,
+            alpha: 0.22,
+            scaleX: 1.18, scaleY: 1.1,
+            duration: 950, ease: 'Sine.InOut',
+            yoyo: true, repeat: -1,
+        });
         this.physics.add.collider(this.player, this.ground);
 
         this.robots = this.physics.add.group();
@@ -713,6 +726,9 @@ class PlayScene extends Phaser.Scene {
         if (this.cursors.left.isDown)       { this.player.setVelocityX(-this.hero.speed); this.player.setFlipX(true); }
         else if (this.cursors.right.isDown) { this.player.setVelocityX(this.hero.speed);  this.player.setFlipX(false); }
         else                                { this.player.setVelocityX(0); }
+
+        // Keep aura tracking the player feet
+        this.heroAura.setPosition(this.player.x, this.player.y + 38);
 
         if (this.cursors.up.isDown && this.player.body.blocked.down) this.player.setVelocityY(-440);
 
@@ -966,6 +982,21 @@ class PlayScene extends Phaser.Scene {
             scaleY: even ? this.player._bsy * 0.93 : this.player._bsy * 1.07,
             duration: 115, ease: 'Sine.InOut',
         });
+        // Footstep dust puff on every other step
+        if (even && this.player.body.blocked.down) {
+            const dx = this.player.x + (this.player.flipX ? 14 : -14);
+            const dy = GROUND_Y - 2;
+            const puff = this.add.ellipse(dx, dy, 10, 6, this.hero.color, 0.45).setDepth(1);
+            this.tweens.add({
+                targets: puff,
+                x: dx + (this.player.flipX ? 18 : -18),
+                y: dy - 12,
+                scaleX: 2.4, scaleY: 1.8,
+                alpha: 0,
+                duration: 280, ease: 'Quad.Out',
+                onComplete: () => puff.destroy(),
+            });
+        }
         this.walkPhase++;
     }
 
@@ -992,6 +1023,15 @@ class PlayScene extends Phaser.Scene {
             angle: 0, scaleX: this.player._bsx * 1.32, scaleY: this.player._bsy * 0.70,
             duration: 75, ease: 'Quad.Out', yoyo: true,
             onComplete: () => { if (this.animState === 'idle') this.startIdleAnim(); },
+        });
+        // Landing impact ring radiating from feet
+        const ring = this.add.ellipse(this.player.x, GROUND_Y - 2, 28, 10, this.hero.color, 0.55).setDepth(1);
+        this.tweens.add({
+            targets: ring,
+            scaleX: 4.5, scaleY: 1.6,
+            alpha: 0,
+            duration: 320, ease: 'Quad.Out',
+            onComplete: () => ring.destroy(),
         });
     }
 
