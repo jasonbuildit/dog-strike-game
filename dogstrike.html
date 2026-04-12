@@ -5,116 +5,1009 @@
     <title>DogStrike: Union Strong</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
-        body { margin: 0; background-color: #2e1a2d; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Courier New', Courier, monospace; }
-        #game-container { border: 5px solid #d4af37; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: #1a0f1a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #game-container {
+            border: 3px solid #d4af37;
+            box-shadow: 0 0 40px rgba(212,175,55,0.3), 0 0 80px rgba(0,0,0,0.8);
+        }
+        #controls-hint {
+            margin-top: 12px;
+            color: #8a6f3a;
+            font-size: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
     <div id="game-container"></div>
+    <div id="controls-hint">← → Move &nbsp;|&nbsp; ↑ Jump &nbsp;|&nbsp; SPACE Strike &nbsp;|&nbsp; X Special Power &nbsp;|&nbsp; R Restart</div>
 
 <script>
 /**
- * DOGSTRIKE: GAME BACKBONE
- * Motif: 1930s Art Deco / Canine Union vs. Industrial Robots
+ * DOGSTRIKE: UNION STRONG
+ * 1930s Art Deco | Canine Union vs. Industrial Robots
  */
 
-class BootScene extends Phaser.Scene {
-    constructor() { super('BootScene'); }
-    preload() {
-        // Placeholder Assets - You would replace these URLs with your downloaded images
-        this.load.image('hero_saint', '/assets/dogs/Image_15ecaxv715eca715ec (4).png'); // Senior Canine Union
-        this.load.image('enemy_enforcer', '/assets/bads/image_8amq0i8amq0i8amq.png'); // Industrial Enforcer
-        this.load.image('boss_chronos', '/assets/bads/Image_j17jxcvbwj17jbwj17j.png'); // Chronos Cognitron
-        this.load.image('bg_factory', '/assets/background/Image_1u3gw41u3gw41u3g.png'); //poop
-    }
-    create() { this.scene.start('PlayScene'); }
+const W = 800;
+const H = 600;
+const GROUND_Y = 520;
+
+const C = {
+    gold:    0xd4af37,  goldS:    '#d4af37',
+    teal:    0x2a9d8f,  tealS:    '#2a9d8f',
+    orange:  0xe76f51,  orangeS:  '#e76f51',
+    crimson: 0xc1121f,  crimsonS: '#c1121f',
+    cream:   0xf4e4bc,  creamS:   '#f4e4bc',
+    plum:    0x2e1a2d,
+    dark:    0x0d0810,
+};
+
+// ─── HERO DEFINITIONS ────────────────────────────────────────────────────────
+const HEROES = {
+    saint: {
+        id: 'saint', name: 'St. Bernard', role: 'Union Leader',
+        spriteKey: 'hero_saint', color: 0xe8c45a, colorS: '#e8c45a',
+        speed: 180, strikeRange: 120, strikeCD: 25,
+        powerName: 'UNITY HOWL',
+        powerDesc: 'Full-screen shockwave — clears all active robots',
+        powerCD: 360, powerColor: C.gold,
+    },
+    shepherd: {
+        id: 'shepherd', name: 'German Shepherd', role: 'Field Commander',
+        spriteKey: 'hero_shepherd', color: 0x8b9e6c, colorS: '#8b9e6c',
+        speed: 200, strikeRange: 95, strikeCD: 20,
+        powerName: 'AUTHORITY BARK',
+        powerDesc: 'Directional shockwave — flings all robots off-screen',
+        powerCD: 300, powerColor: C.teal,
+    },
+    dachshund: {
+        id: 'dachshund', name: 'Dachshund', role: 'Tech Saboteur',
+        spriteKey: 'hero_dachshund', color: 0xc1440e, colorS: '#c1440e',
+        speed: 220, strikeRange: 80, strikeCD: 18,
+        powerName: 'TECH SABOTAGE',
+        powerDesc: 'Breaks shields — destroys all shielded & heavy robots',
+        powerCD: 280, powerColor: C.teal,
+    },
+};
+
+// ─── SHARED HELPERS (mixin-style, bound to scene in use) ─────────────────────
+function drawDecoBorder(scene) {
+    const g = scene.add.graphics().setDepth(5);
+    g.lineStyle(1, C.gold, 0.3);
+    g.strokeRect(8, 8, W - 16, H - 16);
+    g.lineStyle(1, C.gold, 0.12);
+    g.strokeRect(13, 13, W - 26, H - 26);
+    const dia = (x, y, r) => {
+        g.lineStyle(1, C.gold, 0.5);
+        g.beginPath();
+        g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y);
+        g.closePath(); g.strokePath();
+    };
+    [16, W - 16].forEach(x => [16, H - 16].forEach(y => dia(x, y, 8)));
 }
 
+function drawDecoEyeStatic(scene, x, y, color, alpha) {
+    const a = alpha || 0.7;
+    const g = scene.add.graphics();
+    g.lineStyle(2, color, a);
+    // Upper lid: arc center below eye center, clockwise from left to right through top
+    g.beginPath();
+    g.arc(x, y + 14, 28, 3.66, 5.77, false);
+    g.strokePath();
+    // Lower lid: arc center above eye center, clockwise from right to left through bottom
+    g.beginPath();
+    g.arc(x, y - 14, 28, 0.52, 2.62, false);
+    g.strokePath();
+    g.strokeCircle(x, y, 7);
+    g.fillStyle(color, a * 0.6);
+    g.fillCircle(x, y, 3);
+}
+
+// ─── BOOT SCENE ──────────────────────────────────────────────────────────────
+class BootScene extends Phaser.Scene {
+    constructor() { super('BootScene'); }
+
+    preload() {
+        this.failedKeys = new Set();
+        this.assetDefs = [
+            { key: 'hero_saint',     path: './assets/dogs/Image_15ecaxv715eca7.png',          w: 64,  h: 72,  color: 0xe8c45a },
+            { key: 'hero_shepherd',  path: './assets/dogs/Image_r6yk5mxcvr6yk5mr6yk.png',    w: 64,  h: 72,  color: 0x8b9e6c },
+            { key: 'hero_dachshund', path: './assets/dogs/Image_v6bx70v6bx70v6zxcbx.png',    w: 48,  h: 56,  color: 0xc1440e },
+            { key: 'enemy_enforcer', path: './assets/bads/image_8amq0i8amq0i8amq.png',        w: 52,  h: 68,  color: 0x607d8b },
+            { key: 'enemy_heavy',    path: './assets/bads/Image_m7yyyp97yyyp97yy.png',        w: 64,  h: 80,  color: 0x455a64 },
+            { key: 'enemy_admin',    path: './assets/bads/Image_n3fa04n3fa04n3fa.png',         w: 56,  h: 72,  color: 0x9c6b2e },
+            { key: 'boss_chronos',   path: './assets/bads/Image_j17jxcvbwj17jbwj17j.png',     w: 96,  h: 96,  color: 0x880e4f },
+            { key: 'bg_factory',     path: './assets/background/Image_1u3gw41u3gw41u3g.png',  w: 800, h: 600, color: 0x1a0f1a },
+            { key: 'ground_tile',    path: null,                                               w: 64,  h: 32,  color: 0x3d2a1e },
+            { key: 'ground_marble',  path: null,                                               w: 64,  h: 32,  color: 0x5a6070 },
+        ];
+        this.load.on('loaderror', (f) => this.failedKeys.add(f.key));
+        this.assetDefs.forEach(d => { if (d.path) this.load.image(d.key, d.path); });
+    }
+
+    makeRect(key, w, h, color) {
+        const g = this.make.graphics({ x: 0, y: 0, add: false });
+        g.fillStyle(color, 1);
+        g.fillRect(0, 0, w, h);
+        g.lineStyle(2, C.gold, 0.5);
+        g.strokeRect(1, 1, w - 2, h - 2);
+        g.generateTexture(key, w, h);
+        g.destroy();
+    }
+
+    create() {
+        this.assetDefs.forEach(d => {
+            if (!d.path || this.failedKeys.has(d.key)) {
+                if (!this.textures.exists(d.key)) this.makeRect(d.key, d.w, d.h, d.color);
+            }
+        });
+        this.scene.start('TitleScene');
+    }
+}
+
+// ─── TITLE SCENE ─────────────────────────────────────────────────────────────
+class TitleScene extends Phaser.Scene {
+    constructor() { super('TitleScene'); }
+
+    create() {
+        this.add.rectangle(W / 2, H / 2, W, H, C.dark, 1);
+        drawDecoBorder(this);
+
+        // Eye motif above title
+        drawDecoEyeStatic(this, W / 2, H / 2 - 130, C.gold, 0.6);
+
+        // Decorative horizontal rules
+        const g = this.add.graphics();
+        g.lineStyle(1, C.gold, 0.4);
+        g.lineBetween(W / 2 - 140, H / 2 - 100, W / 2 + 140, H / 2 - 100);
+        g.lineBetween(W / 2 - 140, H / 2 + 50,  W / 2 + 140, H / 2 + 50);
+        g.lineStyle(1, C.gold, 0.15);
+        g.lineBetween(W / 2 - 100, H / 2 - 95,  W / 2 + 100, H / 2 - 95);
+
+        const title = this.add.text(W / 2, H / 2 - 60, 'DOGSTRIKE', {
+            fontSize: '62px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 10
+        }).setOrigin(0.5);
+        this.tweens.add({ targets: title, alpha: 0.35, duration: 1300, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+
+        this.add.text(W / 2, H / 2 + 4, 'UNION STRONG', {
+            fontSize: '18px', fill: C.creamS, letterSpacing: 8
+        }).setOrigin(0.5);
+
+        this.add.text(W / 2, H / 2 + 30, '— EST. 1930s —', {
+            fontSize: '11px', fill: C.goldS, letterSpacing: 5
+        }).setOrigin(0.5);
+
+        const prompt = this.add.text(W / 2, H / 2 + 100, 'PRESS SPACE TO BEGIN', {
+            fontSize: '14px', fill: C.goldS, letterSpacing: 3
+        }).setOrigin(0.5);
+        this.tweens.add({ targets: prompt, alpha: 0.2, duration: 650, yoyo: true, repeat: -1 });
+
+        this.add.text(W / 2, H - 24, 'v0.3  |  DOGSONSTRIKE.COM', {
+            fontSize: '10px', fill: '#4a3a1a', letterSpacing: 2
+        }).setOrigin(0.5);
+
+        const go = () => this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        this.input.keyboard.once('keydown-SPACE', go);
+        this.input.once('pointerdown', go);
+    }
+}
+
+// ─── HERO SELECT SCENE ───────────────────────────────────────────────────────
+class HeroSelectScene extends Phaser.Scene {
+    constructor() { super('HeroSelectScene'); }
+
+    init(data) {
+        this.unlockedWave = data.wave  || 1;
+        this.score        = data.score || 0;
+        this.unlocked = {
+            saint:     true,
+            shepherd:  this.unlockedWave >= 4,
+            dachshund: this.unlockedWave >= 7,
+        };
+    }
+
+    create() {
+        this.add.rectangle(W / 2, H / 2, W, H, C.dark, 1);
+        drawDecoBorder(this);
+
+        this.add.text(W / 2, 48, 'DOGSTRIKE', { fontSize: '36px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 8 }).setOrigin(0.5);
+        this.add.text(W / 2, 88, '— CHOOSE YOUR UNION LEADER —', { fontSize: '12px', fill: C.goldS, letterSpacing: 4 }).setOrigin(0.5);
+
+        const heroList = [HEROES.saint, HEROES.shepherd, HEROES.dachshund];
+        const cardW = 200, cardH = 320, gap = 30;
+        const startX = (W - (cardW * 3 + gap * 2)) / 2;
+
+        heroList.forEach((hero, i) => {
+            const cx = startX + i * (cardW + gap) + cardW / 2;
+            const cy = H / 2 + 28;
+            this.buildCard(cx, cy, cardW, cardH, hero, i + 1, !this.unlocked[hero.id]);
+        });
+
+        this.add.text(W / 2, H - 24, '1 / 2 / 3  or  CLICK  to select', { fontSize: '12px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
+
+        this.input.keyboard.once('keydown-ONE',          () => this.selectHero('saint'));
+        this.input.keyboard.once('keydown-TWO',          () => this.selectHero('shepherd'));
+        this.input.keyboard.once('keydown-THREE',        () => this.selectHero('dachshund'));
+        this.input.keyboard.once('keydown-NUMPAD_ONE',   () => this.selectHero('saint'));
+        this.input.keyboard.once('keydown-NUMPAD_TWO',   () => this.selectHero('shepherd'));
+        this.input.keyboard.once('keydown-NUMPAD_THREE', () => this.selectHero('dachshund'));
+    }
+
+    buildCard(cx, cy, cardW, cardH, hero, num, locked) {
+        const card = this.add.rectangle(cx, cy, cardW, cardH, 0x1a0f1a, 0.95)
+            .setStrokeStyle(1, locked ? 0x444444 : hero.color);
+
+        this.add.image(cx, cy - 70, hero.spriteKey).setDisplaySize(80, 90).setAlpha(locked ? 0.25 : 1);
+
+        if (locked) {
+            this.add.text(cx, cy - 70, '🔒', { fontSize: '28px' }).setOrigin(0.5);
+            this.add.text(cx, cy - 18, 'UNLOCK\nWAVE ' + (hero.id === 'shepherd' ? 4 : 7), {
+                fontSize: '11px', fill: '#888', align: 'center'
+            }).setOrigin(0.5);
+        }
+
+        this.add.text(cx, cy + 20, hero.name.toUpperCase(), {
+            fontSize: '13px', fill: locked ? '#555' : C.goldS, fontStyle: 'bold', letterSpacing: 1
+        }).setOrigin(0.5);
+        this.add.text(cx, cy + 40, hero.role, { fontSize: '10px', fill: locked ? '#444' : C.creamS }).setOrigin(0.5);
+
+        const lg = this.add.graphics();
+        lg.lineStyle(1, locked ? 0x333333 : hero.color, locked ? 0.2 : 0.5);
+        lg.lineBetween(cx - 70, cy + 56, cx + 70, cy + 56);
+
+        this.add.text(cx, cy + 74, hero.powerName, {
+            fontSize: '10px', fill: locked ? '#444' : C.tealS, fontStyle: 'bold', letterSpacing: 2
+        }).setOrigin(0.5);
+
+        this.wrapText(hero.powerDesc, 22).forEach((line, li) => {
+            this.add.text(cx, cy + 92 + li * 16, line, { fontSize: '10px', fill: locked ? '#333' : '#aaa', align: 'center' }).setOrigin(0.5);
+        });
+
+        this.add.text(cx, cy + cardH / 2 - 22, locked ? '—' : '[' + num + ']', {
+            fontSize: '18px', fill: locked ? '#333' : C.goldS
+        }).setOrigin(0.5);
+
+        if (!locked) {
+            card.setInteractive({ useHandCursor: true });
+            card.on('pointerdown', () => this.selectHero(hero.id));
+            card.on('pointerover', () => card.setStrokeStyle(2, hero.color));
+            card.on('pointerout',  () => card.setStrokeStyle(1, hero.color));
+        }
+    }
+
+    wrapText(text, maxChars) {
+        const words = text.split(' ');
+        const lines = [];
+        let line = '';
+        words.forEach(w => {
+            if ((line + w).length > maxChars) { lines.push(line.trim()); line = ''; }
+            line += w + ' ';
+        });
+        if (line.trim()) lines.push(line.trim());
+        return lines;
+    }
+
+    selectHero(id) {
+        if (!this.unlocked[id]) return;
+        const level = this.unlockedWave >= 7 ? 'cityhall' : 'factory';
+        this.scene.start('PlayScene', { heroId: id, wave: this.unlockedWave, score: this.score, level });
+    }
+}
+
+// ─── STORY SCENE ─────────────────────────────────────────────────────────────
+class StoryScene extends Phaser.Scene {
+    constructor() { super('StoryScene'); }
+
+    init(data) {
+        this.beatIndex = data.beatIndex || 0;
+        this.heroId    = data.heroId    || 'saint';
+        this.wave      = data.wave      || 1;
+        this.score     = data.score     || 0;
+    }
+
+    create() {
+        const beats = [
+            {
+                title: 'THE PRODUCTION STALEMATE',
+                subtitle: 'FACTORY 01 SECURED',
+                panels: [
+                    { heading: 'THE LAST ENFORCER FALLS', lines: ['The factory floor falls silent.', 'The machines stop turning.'] },
+                    { heading: 'SOLIDARITY',               lines: ['Paw in paw, the workers', 'unite at the gates.'] },
+                    { heading: 'THE PICKET LINE',          lines: ['"DIGNITY NOW!"', '"SOLIDARITY FOREVER!"'] },
+                    { heading: 'ONWARD TO CITY HALL',      lines: ['The fight is not over.', 'The march continues...'] },
+                ],
+                unlock: '★ GERMAN SHEPHERD UNLOCKED',
+            },
+            {
+                title: 'THE STORMING OF CITY HALL',
+                subtitle: 'PART I: THE BREAKTHROUGH',
+                panels: [
+                    { heading: 'THE GRAND APPROACH',   lines: ['Thousands converge', 'on the marble steps.'] },
+                    { heading: 'THE GUARDS HOLD',      lines: ['"You shall not pass!"', 'A hover-drone BZZTs...'] },
+                    { heading: 'AUTHORITY BARK!',      lines: ['"Our resolve was absolute..."', 'The sound waves scatter all.'] },
+                    { heading: 'BARK-BROKEN!',         lines: ['"...solidarity became a storm."', 'The rotunda awaits.'] },
+                ],
+                unlock: '★ DACHSHUND UNLOCKED',
+            },
+        ];
+
+        const beat = beats[Math.min(this.beatIndex, beats.length - 1)];
+
+        this.add.rectangle(W / 2, H / 2, W, H, 0x080510, 1);
+
+        // Title band
+        this.add.rectangle(W / 2, 38, W, 76, 0x110d20, 1);
+        const gtop = this.add.graphics();
+        gtop.lineStyle(1, C.gold, 0.4);
+        gtop.lineBetween(20, 76, W - 20, 76);
+
+        this.add.text(W / 2, 18, beat.title, { fontSize: '17px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 4 }).setOrigin(0.5);
+        this.add.text(W / 2, 46, beat.subtitle, { fontSize: '11px', fill: C.creamS, letterSpacing: 3 }).setOrigin(0.5);
+
+        // Unlock badge
+        if (beat.unlock) {
+            this.add.text(W / 2, 62, beat.unlock, { fontSize: '10px', fill: C.tealS, fontStyle: 'bold', letterSpacing: 2 }).setOrigin(0.5);
+        }
+
+        // 2×2 panel grid
+        const pw = 368, ph = 212;
+        const cols = [204, W - 204];
+        const rows = [H / 2 - ph / 2 - 4 + 38, H / 2 + ph / 2 + 4 + 38];
+
+        beat.panels.forEach((panel, i) => {
+            const cx = cols[i % 2];
+            const cy = rows[Math.floor(i / 2)];
+            this.drawPanel(cx, cy, pw, ph, panel, i, this.beatIndex);
+        });
+
+        const prompt = this.add.text(W / 2, H - 18, 'SPACE → Continue', { fontSize: '13px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
+        this.tweens.add({ targets: prompt, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 });
+
+        const go = () => this.scene.start('HeroSelectScene', { wave: this.wave, score: this.score });
+        this.input.keyboard.once('keydown-SPACE', go);
+        this.input.once('pointerdown', go);
+    }
+
+    drawPanel(cx, cy, pw, ph, panel, index, beatIndex) {
+        const g = this.add.graphics();
+        // Outer border
+        g.lineStyle(2, C.gold, 0.65);
+        g.strokeRect(cx - pw / 2, cy - ph / 2, pw, ph);
+        g.lineStyle(1, C.gold, 0.18);
+        g.strokeRect(cx - pw / 2 + 5, cy - ph / 2 + 5, pw - 10, ph - 10);
+
+        // Art
+        this.drawPanelArt(g, cx, cy, ph, index, beatIndex);
+
+        // Heading
+        this.add.text(cx, cy - ph / 2 + 16, panel.heading, {
+            fontSize: '10px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 2
+        }).setOrigin(0.5);
+
+        // Lines at bottom
+        panel.lines.forEach((line, li) => {
+            this.add.text(cx, cy + ph / 2 - 34 + li * 17, line, {
+                fontSize: '10px', fill: C.creamS, fontStyle: 'italic'
+            }).setOrigin(0.5);
+        });
+    }
+
+    drawPanelArt(g, cx, cy, ph, index, beatIndex) {
+        const ay = cy - ph / 2 + 30;   // art area top
+        const am = cy + ph / 2 - 50;   // art area mid-bottom
+
+        if (beatIndex === 0) {
+            if (index === 0) {
+                // Factory silhouette
+                g.fillStyle(0x2a1520, 1);
+                g.fillRect(cx - 65, am - 40, 130, 50);
+                g.fillRect(cx - 45, am - 62, 18, 26);
+                g.fillRect(cx + 20, am - 55, 18, 20);
+                // Smoke
+                g.lineStyle(1, 0x445544, 0.4);
+                for (let i = 0; i < 3; i++) { g.lineBetween(cx - 36 + i*65/2, am - 62, cx - 34 + i*65/2, am - 72); }
+                // Victory paw/fist symbol
+                g.lineStyle(2, C.gold, 0.7);
+                g.strokeCircle(cx, am - 78, 14);
+                g.fillStyle(C.gold, 0.55);
+                g.fillCircle(cx, am - 78, 7);
+            } else if (index === 1) {
+                // Ring of paws
+                g.lineStyle(1, C.gold, 0.25);
+                g.strokeCircle(cx, am - 30, 46);
+                for (let i = 0; i < 6; i++) {
+                    const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+                    const px = cx + Math.cos(a) * 46, py = am - 30 + Math.sin(a) * 46;
+                    g.fillStyle(C.gold, 0.65);
+                    g.fillCircle(px, py, 10);
+                    // paw toe dots
+                    for (let t = 0; t < 3; t++) {
+                        const ta = a + (t - 1) * 0.5;
+                        g.fillStyle(C.gold, 0.4);
+                        g.fillCircle(px + Math.cos(ta) * 7, py + Math.sin(ta) * 7, 3);
+                    }
+                }
+            } else if (index === 2) {
+                // Picket line silhouettes
+                g.fillStyle(0x3a2020, 1);
+                for (let i = 0; i < 5; i++) {
+                    g.fillRect(cx - 76 + i * 32, am - 28, 16, 36);
+                    g.fillRect(cx - 74 + i * 32, am - 48, 2, 22);
+                    g.lineStyle(1, C.gold, 0.5);
+                    g.strokeRect(cx - 80 + i * 32, am - 52, 18, 8);
+                }
+                g.lineStyle(1, C.gold, 0.2);
+                g.lineBetween(cx - 80, am + 10, cx + 80, am + 10);
+            } else {
+                // Road toward city hall dome
+                g.lineStyle(2, C.gold, 0.35);
+                g.lineBetween(cx - 85, am + 5, cx + 50, am + 5);
+                g.lineStyle(2, C.gold, 0.6);
+                g.beginPath();
+                g.arc(cx + 50, am + 5, 32, Math.PI, 0, false);
+                g.strokePath();
+                g.fillStyle(0x2a2040, 1);
+                g.fillRect(cx + 30, am + 5, 40, 22);
+                for (let c = 0; c < 3; c++) { g.fillStyle(0x3a3060, 1); g.fillRect(cx + 34 + c * 12, am + 5, 6, 22); }
+                // Arrow
+                g.lineStyle(2, C.gold, 0.75);
+                g.lineBetween(cx - 80, am - 20, cx + 10, am - 20);
+                g.lineBetween(cx - 2, am - 30, cx + 14, am - 20);
+                g.lineBetween(cx - 2, am - 10, cx + 14, am - 20);
+            }
+        } else {
+            if (index === 0) {
+                // City Hall facade
+                g.fillStyle(0x1a1535, 1);
+                g.fillRect(cx - 72, am - 8, 144, 46);
+                g.lineStyle(2, C.teal, 0.35);
+                g.beginPath(); g.arc(cx, am - 8, 42, Math.PI, 0, false); g.strokePath();
+                for (let c = 0; c < 5; c++) {
+                    g.fillStyle(0x2a2550, 1);
+                    g.fillRect(cx - 60 + c * 30, am - 8, 8, 46);
+                }
+                for (let s = 0; s < 3; s++) {
+                    g.fillStyle(0x252040, 1);
+                    g.fillRect(cx - 72 + s * 8, am + 38 + s * 8, 144 - s * 16, 10);
+                }
+                // Eye in dome
+                drawDecoEyeStatic(this, cx, am - 28, C.teal, 0.4);
+            } else if (index === 1) {
+                // Guard line
+                for (let i = 0; i < 4; i++) {
+                    g.fillStyle(0x445566, 1);
+                    g.fillRect(cx - 56 + i * 30, am - 22, 18, 40);
+                    g.fillStyle(0x5566aa, 0.8);
+                    g.fillRect(cx - 54 + i * 30, am - 8, 14, 22);
+                }
+                // Approaching dogs
+                g.fillStyle(C.gold, 0.45);
+                for (let i = 0; i < 3; i++) { g.fillRect(cx - 110 + i * 22, am - 10, 14, 28); }
+            } else if (index === 2) {
+                // Authority Bark visualization
+                const bx = cx - 30, by = am - 8;
+                g.fillStyle(0x4a5540, 1);
+                g.fillRect(bx - 14, by - 28, 22, 38);
+                for (let w = 0; w < 5; w++) {
+                    g.lineStyle(2, C.teal, 0.7 - w * 0.1);
+                    g.beginPath();
+                    g.arc(bx + 6, by, 22 + w * 18, -0.75, 0.75, false);
+                    g.strokePath();
+                    // Eye glyphs along arc crest
+                    if (w % 2 === 0) {
+                        const er = 22 + w * 18;
+                        [-0.4, 0, 0.4].forEach(ea => {
+                            const ex = bx + 6 + Math.cos(ea) * er;
+                            const ey = by + Math.sin(ea) * er;
+                            g.lineStyle(1, C.teal, 0.6);
+                            g.strokeCircle(ex, ey, 4);
+                            g.fillStyle(C.teal, 0.4);
+                            g.fillCircle(ex, ey, 2);
+                        });
+                    }
+                }
+            } else {
+                // Victory — dogs at top of steps
+                for (let s = 0; s < 3; s++) {
+                    g.fillStyle(0x252040, 1);
+                    g.fillRect(cx - 68 + s * 10, am + 8 + s * 10, 136 - s * 20, 12);
+                }
+                g.fillStyle(C.gold, 0.65);
+                for (let i = 0; i < 4; i++) { g.fillRect(cx - 46 + i * 26, am - 22, 18, 32); }
+                // Victory burst
+                for (let i = 0; i < 8; i++) {
+                    const ba = (i / 8) * Math.PI * 2;
+                    g.lineStyle(1, C.gold, 0.55);
+                    g.lineBetween(cx + 64, am - 30, cx + 64 + Math.cos(ba) * 18, am - 30 + Math.sin(ba) * 18);
+                }
+                g.lineStyle(1, C.gold, 0.55);
+                g.strokeCircle(cx + 64, am - 30, 22);
+            }
+        }
+    }
+}
+
+// ─── PLAY SCENE ──────────────────────────────────────────────────────────────
 class PlayScene extends Phaser.Scene {
     constructor() { super('PlayScene'); }
 
+    init(data) {
+        this.hero        = HEROES[data.heroId || 'saint'];
+        this.wave        = data.wave   || 1;
+        this.score       = data.score  || 0;
+        this.level       = data.level  || 'factory';
+        this.unionPct    = 100;
+        this.strikeCD    = 0;
+        this.powerCD     = 0;
+        this.waveCleared = false;
+        this.spawnQueue  = 0;
+        this.gameOver    = false;
+    }
+
     create() {
-        // 1. World & Background
-        this.add.image(400, 300, 'bg_factory').setAlpha(0.3);
-        
-        // 2. Player Setup (The Union Leader)
-        this.player = this.physics.add.sprite(100, 450, 'hero_saint');
+        if (this.level === 'cityhall') {
+            this.drawCityHallBG();
+        } else {
+            this.add.image(W / 2, H / 2, 'bg_factory').setAlpha(0.35).setDisplaySize(W, H);
+        }
+        drawDecoBorder(this);
+
+        // Ground — different tile for each level
+        const groundKey = this.level === 'cityhall' ? 'ground_marble' : 'ground_tile';
+        this.ground = this.physics.add.staticGroup();
+        for (let x = 0; x < W; x += 64) {
+            this.ground.create(x + 32, GROUND_Y + 16, groundKey);
+        }
+
+        this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.spriteKey);
         this.player.setCollideWorldBounds(true);
-        this.player.health = 100;
+        this.player.setDisplaySize(56, 64);
+        this.physics.add.collider(this.player, this.ground);
 
-        // 3. Enemy Group (The Robot Antagonists)
         this.robots = this.physics.add.group();
-        this.spawnRobot();
+        this.physics.add.collider(this.robots, this.ground);
+        this.physics.add.overlap(this.player, this.robots, this.onHit, null, this);
 
-        // 4. Systems: Union Strength (UI)
-        this.unionStrength = 100;
-        this.strengthText = this.add.text(20, 20, 'UNION STRENGTH: 100%', { 
-            fontSize: '24px', 
-            fill: '#d4af37',
-            fontStyle: 'bold'
+        this.spawnQueue = this.calcWaveCount();
+        const interval = Math.max(400, 1400 - this.wave * 80);
+        this.spawnTimer = this.time.addEvent({
+            delay: interval, callback: this.spawnNext,
+            callbackScope: this, repeat: this.spawnQueue - 1
         });
 
-        // 5. Controls
-        this.cursors = this.input.keyboard.createCursorKeys();
-        this.strikeKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this.buildUI();
 
-        // 6. Collisions
-        this.physics.add.overlap(this.player, this.robots, this.handleRobotCollision, null, this);
+        this.cursors    = this.input.keyboard.createCursorKeys();
+        this.strikeKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this.powerKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+        this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+
+        this.strikeRing = this.add.circle(0, 0, 80, C.gold, 0).setDepth(10);
     }
 
+    calcWaveCount() { return Math.min(3 + this.wave * 2, 20); }
+
+    spawnNext() {
+        if (this.waveCleared) return;
+        const isBoss  = (this.wave % 3 === 0) && (this.spawnQueue <= 1);
+        const isAdmin = this.level === 'cityhall' && !isBoss && Math.random() > 0.5;
+        const isShielded = !isBoss && !isAdmin && this.wave >= 2 && Math.random() > 0.7;
+
+        let key;
+        if (isBoss)  key = 'boss_chronos';
+        else if (isAdmin) key = 'enemy_admin';
+        else key = Math.random() > 0.6 ? 'enemy_heavy' : 'enemy_enforcer';
+
+        const x = Phaser.Math.Between(700, 790);
+        const y = GROUND_Y - (isBoss ? 70 : 50);
+        const bot = this.robots.create(x, y, key);
+        bot.setVelocityX(isBoss ? -28 : isAdmin ? Phaser.Math.Between(-90, -60) : Phaser.Math.Between(-75, -42));
+        bot.setDisplaySize(isBoss ? 80 : isAdmin ? 56 : 52, isBoss ? 88 : isAdmin ? 70 : 64);
+        bot.setCollideWorldBounds(false);
+        bot.isBoss     = isBoss;
+        bot.isAdmin    = isAdmin;
+        bot.isShielded = isShielded || isAdmin;  // admins always shielded
+        bot.hp         = isBoss ? 3 : (isAdmin || isShielded) ? 2 : 1;
+        if (bot.isShielded) bot.setTint(isAdmin ? 0x88aaff : 0x44aaff);
+        this.spawnQueue--;
+    }
+
+    // ── UI ───────────────────────────────────────────────────────────────────
+    buildUI() {
+        this.add.rectangle(22 + 149, 13 + 9, 302, 22, 0x000000, 0.7).setOrigin(0.5);
+        this.barBg = this.add.rectangle(22, 13, 300, 20, 0x3d2a1e).setOrigin(0, 0);
+        this.barFg = this.add.rectangle(23, 14, 298, 18, C.gold).setOrigin(0, 0);
+        this.add.text(22, 37, 'UNION STRENGTH', { fontSize: '10px', fill: C.goldS, letterSpacing: 2 });
+
+        this.add.rectangle(22 + 149, 58 + 6, 302, 14, 0x000000, 0.7).setOrigin(0.5);
+        this.pwrBg = this.add.rectangle(22, 58, 300, 12, 0x1a2a28).setOrigin(0, 0);
+        this.pwrFg = this.add.rectangle(23, 59, 0, 10, C.teal).setOrigin(0, 0);
+        this.pwrLabel = this.add.text(22, 73, '', { fontSize: '10px', fill: C.tealS, letterSpacing: 1 });
+
+        this.waveText  = this.add.text(W - 16, 12, '', { fontSize: '18px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(1, 0);
+        this.scoreText = this.add.text(W - 16, 36, '', { fontSize: '12px', fill: C.creamS }).setOrigin(1, 0);
+        this.levelText = this.add.text(W - 16, 56, this.level === 'cityhall' ? 'CITY HALL' : 'FACTORY', {
+            fontSize: '10px', fill: C.tealS, letterSpacing: 2
+        }).setOrigin(1, 0);
+
+        this.add.text(W / 2, 12, this.hero.name.toUpperCase(), { fontSize: '12px', fill: C.goldS, letterSpacing: 2, fontStyle: 'bold' }).setOrigin(0.5, 0);
+        this.remainText = this.add.text(W / 2, 30, '', { fontSize: '11px', fill: C.tealS }).setOrigin(0.5, 0);
+
+        this.updateUI();
+    }
+
+    updateUI() {
+        const pct = Math.max(0, this.unionPct);
+        this.barFg.setDisplaySize(Math.floor(298 * pct / 100), 18);
+        this.barFg.setFillStyle(pct > 60 ? C.gold : pct > 30 ? C.orange : C.crimson);
+
+        const pwrReady = this.powerCD === 0;
+        const pwrPct   = Math.max(0, 1 - this.powerCD / this.hero.powerCD);
+        this.pwrFg.setDisplaySize(Math.floor(298 * pwrPct), 10);
+        this.pwrFg.setFillStyle(pwrReady ? C.gold : C.teal);
+        this.pwrLabel.setText(this.hero.powerName + (pwrReady ? ' [X] READY' : ' [X] ' + Math.ceil(this.powerCD / 60) + 's'));
+        this.pwrLabel.setColor(pwrReady ? C.goldS : C.tealS);
+
+        this.waveText.setText('WAVE ' + this.wave);
+        this.scoreText.setText('SCORE: ' + this.score);
+        const alive = this.robots.countActive(true);
+        this.remainText.setText(this.spawnQueue > 0
+            ? this.spawnQueue + ' incoming + ' + alive + ' active'
+            : alive + ' remaining');
+    }
+
+    // ── UPDATE ───────────────────────────────────────────────────────────────
     update() {
-        // Movement Logic
-        if (this.cursors.left.isDown) {
-            this.player.setVelocityX(-160);
-        } else if (this.cursors.right.isDown) {
-            this.player.setVelocityX(160);
-        } else {
-            this.player.setVelocityX(0);
+        if (this.waveCleared || this.gameOver) return;
+
+        if (this.cursors.left.isDown)       { this.player.setVelocityX(-this.hero.speed); this.player.setFlipX(true); }
+        else if (this.cursors.right.isDown) { this.player.setVelocityX(this.hero.speed);  this.player.setFlipX(false); }
+        else                                { this.player.setVelocityX(0); }
+
+        if (this.cursors.up.isDown && this.player.body.blocked.down) this.player.setVelocityY(-440);
+
+        if (this.strikeCD > 0) this.strikeCD--;
+        if (Phaser.Input.Keyboard.JustDown(this.strikeKey) && this.strikeCD === 0) this.performStrike();
+
+        if (this.powerCD > 0) this.powerCD--;
+        if (Phaser.Input.Keyboard.JustDown(this.powerKey) && this.powerCD === 0) this.performSpecialPower();
+
+        if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+
+        this.robots.children.entries.forEach(r => { if (r.active && r.x < -100) r.destroy(); });
+
+        if (this.spawnQueue <= 0 && this.robots.countActive(true) === 0 && !this.waveCleared) {
+            this.waveCleared = true;
+            this.time.delayedCall(400, () => this.showWaveCleared());
         }
 
-        // Strike Logic (The "Action")
-        if (Phaser.Input.Keyboard.JustDown(this.strikeKey)) {
-            this.performUnionStrike();
-        }
+        this.updateUI();
     }
 
-    spawnRobot() {
-        let x = Phaser.Math.Between(400, 800);
-        let robot = this.robots.create(x, 450, 'enemy_enforcer');
-        robot.setVelocityX(-50);
-    }
+    // ── BASIC STRIKE ─────────────────────────────────────────────────────────
+    performStrike() {
+        this.strikeCD = this.hero.strikeCD;
+        const px = this.player.x, py = this.player.y;
 
-    performUnionStrike() {
-        // Logic for barking/striking to disable robots
-        console.log("DOG STRIKE ACTIVE!");
+        this.strikeRing.setPosition(px, py).setAlpha(0.65).setScale(1);
+        this.tweens.add({ targets: this.strikeRing, scaleX: 2.2, scaleY: 2.2, alpha: 0,
+            duration: 300, ease: 'Expo.Out', onComplete: () => this.strikeRing.setScale(1) });
+
+        let hit = false;
         this.robots.children.entries.forEach(robot => {
-            if (Phaser.Math.Distance.BetweenPoints(this.player, robot) < 100) {
+            if (!robot.active) return;
+            if (Phaser.Math.Distance.BetweenPoints(this.player, robot) >= this.hero.strikeRange) return;
+            if (robot.isShielded && this.hero.id !== 'dachshund') {
+                this.showPopup(robot.x, robot.y - 30, 'SHIELDED', C.tealS);
+                this.cameras.main.shake(40, 0.003);
+                return;
+            }
+            robot.hp--;
+            this.cameras.main.shake(70, 0.005);
+            if (robot.hp <= 0) {
+                this.score += robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
+                this.burstEffect(robot.x, robot.y, C.gold);
                 robot.destroy();
-                this.spawnRobot(); // Keep the cycle going
+            } else {
+                robot.setTint(0xff4444);
+                this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
+            }
+            hit = true;
+        });
+
+        this.showPopup(px, py - 50, hit ? 'STRIKE!' : 'MISS', hit ? C.goldS : C.orangeS);
+    }
+
+    // ── SPECIAL POWERS ───────────────────────────────────────────────────────
+    performSpecialPower() {
+        this.powerCD = this.hero.powerCD;
+        if (this.hero.id === 'saint')     this.powerUnityHowl();
+        if (this.hero.id === 'shepherd')  this.powerAuthorityBark();
+        if (this.hero.id === 'dachshund') this.powerTechSabotage();
+    }
+
+    powerUnityHowl() {
+        this.cameras.main.shake(300, 0.018);
+        const cx = this.player.x, cy = this.player.y;
+        this.showPopup(cx, cy - 70, '— UNITY HOWL —', C.goldS);
+
+        // 3 concentric expanding rings with eye stamps along each
+        for (let ring = 0; ring < 3; ring++) {
+            this.time.delayedCall(ring * 90, () => {
+                const g = this.add.graphics().setDepth(12);
+                g.lineStyle(3, C.gold, 0.8);
+                g.strokeCircle(cx, cy, 40);
+                this.tweens.add({ targets: g, scaleX: 8, scaleY: 8, alpha: 0,
+                    duration: 600, ease: 'Sine.Out', onComplete: () => g.destroy() });
+
+                // 6 eye stamps evenly spaced around the ring radius
+                for (let e = 0; e < 6; e++) {
+                    const ea = (e / 6) * Math.PI * 2;
+                    const er = 60 + ring * 20;
+                    this.time.delayedCall(ring * 50, () => {
+                        this.drawDecoEye(cx + Math.cos(ea) * er, cy + Math.sin(ea) * er, C.gold, 12);
+                    });
+                }
+            });
+        }
+
+        this.time.delayedCall(60, () => this.drawDecoEye(cx, cy, C.gold, 14));
+
+        this.time.delayedCall(200, () => {
+            this.robots.children.entries.forEach(robot => {
+                if (!robot.active) return;
+                this.score += robot.isBoss ? 250 : robot.isAdmin ? 180 : robot.isShielded ? 120 : 80;
+                this.burstEffect(robot.x, robot.y, C.gold);
+                robot.destroy();
+            });
+        });
+    }
+
+    powerAuthorityBark() {
+        this.cameras.main.shake(200, 0.012);
+        const cx = this.player.x, cy = this.player.y;
+        const dir = this.player.flipX ? -1 : 1;
+        this.showPopup(cx, cy - 70, '— AUTHORITY BARK —', C.tealS);
+
+        for (let i = 0; i < 5; i++) {
+            this.time.delayedCall(i * 55, () => {
+                const g = this.add.graphics().setDepth(12);
+                const r = 55 + i * 22;
+                g.lineStyle(2, C.teal, 0.7 - i * 0.1);
+                g.beginPath();
+                g.arc(cx, cy, r, dir > 0 ? -0.8 : Math.PI - 0.8, dir > 0 ? 0.8 : Math.PI + 0.8, false);
+                g.strokePath();
+
+                // Eye glyphs at 3 points along the arc crest
+                [-0.4, 0, 0.4].forEach(offset => {
+                    const baseAngle = dir > 0 ? 0 : Math.PI;
+                    const ex = cx + Math.cos(baseAngle + offset) * r;
+                    const ey = cy + Math.sin(baseAngle + offset) * r;
+                    g.lineStyle(1, C.teal, 0.55);
+                    g.strokeCircle(ex, ey, 5);
+                    g.fillStyle(C.teal, 0.35);
+                    g.fillCircle(ex, ey, 2);
+                });
+
+                this.tweens.add({ targets: g, x: dir * (80 + i * 35), alpha: 0,
+                    duration: 480, ease: 'Cubic.Out', onComplete: () => g.destroy() });
+            });
+        }
+
+        this.time.delayedCall(140, () => {
+            this.robots.children.entries.forEach(robot => {
+                if (!robot.active) return;
+                robot.setVelocityX(dir * 620);
+                robot.setVelocityY(-160);
+                this.score += robot.isBoss ? 200 : robot.isAdmin ? 160 : robot.isShielded ? 100 : 60;
+                this.time.delayedCall(750, () => { if (robot.active) robot.destroy(); });
+            });
+        });
+    }
+
+    powerTechSabotage() {
+        this.cameras.main.shake(150, 0.01);
+        const cx = this.player.x, cy = this.player.y;
+        this.showPopup(cx, cy - 70, '— TECH SABOTAGE —', C.tealS);
+
+        const g = this.add.graphics().setDepth(12);
+        for (let i = 0; i < 16; i++) {
+            const angle = (i / 16) * Math.PI * 2;
+            const len = Phaser.Math.Between(50, 130);
+            g.lineStyle(1, C.teal, 0.85);
+            g.beginPath();
+            g.moveTo(cx, cy);
+            g.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len);
+            g.strokePath();
+        }
+        this.tweens.add({ targets: g, alpha: 0, duration: 500, onComplete: () => g.destroy() });
+
+        this.time.delayedCall(60, () => this.drawDecoEye(cx, cy, C.teal, 14));
+
+        this.time.delayedCall(120, () => {
+            this.robots.children.entries.forEach(robot => {
+                if (!robot.active) return;
+                if (robot.isShielded || robot.isBoss || robot.isAdmin) {
+                    this.score += robot.isBoss ? 280 : robot.isAdmin ? 200 : 130;
+                    this.burstEffect(robot.x, robot.y, C.teal);
+                    robot.destroy();
+                } else {
+                    robot.clearTint();
+                    robot.isShielded = false;
+                }
+            });
+        });
+    }
+
+    // ── VISUAL HELPERS ───────────────────────────────────────────────────────
+    drawDecoEye(x, y, color, depth) {
+        const g = this.add.graphics().setDepth(depth || 14);
+        g.lineStyle(2, color, 0.85);
+        g.beginPath();
+        g.arc(x, y + 17, 33, 3.67, 5.75, false);
+        g.strokePath();
+        g.beginPath();
+        g.arc(x, y - 17, 33, 0.53, 2.61, false);
+        g.strokePath();
+        g.strokeCircle(x, y, 8);
+        g.fillStyle(color, 0.55);
+        g.fillCircle(x, y, 4);
+        this.tweens.add({ targets: g, alpha: 0, scaleX: 2.4, scaleY: 2.4,
+            duration: 650, ease: 'Cubic.Out', onComplete: () => g.destroy() });
+    }
+
+    burstEffect(x, y, color) {
+        const g = this.add.graphics().setDepth(15);
+        g.fillStyle(color, 0.9);
+        for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            g.fillCircle(x + Math.cos(a) * 22, y + Math.sin(a) * 22, 5);
+        }
+        this.tweens.add({ targets: g, alpha: 0, scaleX: 1.8, scaleY: 1.8,
+            duration: 300, onComplete: () => g.destroy() });
+    }
+
+    showPopup(x, y, msg, color) {
+        const t = this.add.text(x, y, msg, {
+            fontSize: '18px', fill: color, fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+        }).setOrigin(0.5).setDepth(16);
+        this.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 700, onComplete: () => t.destroy() });
+    }
+
+    // ── COLLISION ────────────────────────────────────────────────────────────
+    onHit(player, robot) {
+        if (!robot.active) return;
+        const dmg = robot.isBoss ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
+        this.unionPct -= dmg;
+        this.cameras.main.shake(110, 0.012);
+        this.showPopup(player.x, player.y - 30, '-' + dmg + '%', C.crimsonS);
+        robot.destroy();
+        if (this.unionPct <= 0) {
+            this.gameOver = true;
+            this.time.delayedCall(250, () => this.showGameOver());
+        }
+    }
+
+    // ── OVERLAYS ─────────────────────────────────────────────────────────────
+    showWaveCleared() {
+        const bonus = Math.floor(this.unionPct / 10) * 50;
+        this.score += bonus;
+        const nextWave = this.wave + 1;
+
+        this.add.rectangle(W / 2, H / 2, 460, 230, C.dark, 0.93).setDepth(20).setStrokeStyle(1, C.gold);
+        this.add.text(W / 2, H / 2 - 82, '— WAVE CLEARED —',    { fontSize: '26px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 - 36, 'Score: ' + this.score, { fontSize: '20px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 4,  'Morale Bonus: +' + bonus, { fontSize: '14px', fill: C.tealS }).setOrigin(0.5).setDepth(21);
+
+        const nextLabel = (nextWave === 4) ? 'SPACE → The Storming of City Hall...'
+                        : (nextWave === 7) ? 'SPACE → Into the Rotunda...'
+                        : 'SPACE → Next Wave';
+        this.add.text(W / 2, H / 2 + 74, nextLabel, { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
+
+        this.input.keyboard.once('keydown-SPACE', () => {
+            if (nextWave === 4) {
+                this.scene.start('StoryScene', { beatIndex: 0, heroId: this.hero.id, wave: nextWave, score: this.score });
+            } else if (nextWave === 7) {
+                this.scene.start('StoryScene', { beatIndex: 1, heroId: this.hero.id, wave: nextWave, score: this.score });
+            } else {
+                this.scene.start('HeroSelectScene', { wave: nextWave, score: this.score });
             }
         });
     }
 
-    handleRobotCollision(player, robot) {
-        this.unionStrength -= 0.1; // Passive morale drain when bots are close
-        this.strengthText.setText(`UNION STRENGTH: ${Math.floor(this.unionStrength)}%`);
-        
-        if (this.unionStrength <= 0) {
-            this.scene.restart();
+    showGameOver() {
+        this.add.rectangle(W / 2, H / 2, 460, 250, C.dark, 0.94).setDepth(20).setStrokeStyle(1, C.crimson);
+        this.add.text(W / 2, H / 2 - 85, '— UNION BROKEN —',          { fontSize: '26px', fill: C.crimsonS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 - 38, 'Fell on Wave ' + this.wave,  { fontSize: '18px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 4,  'Final Score: ' + this.score, { fontSize: '22px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 76, 'R → Back to Hero Select',    { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
+    }
+
+    // ── CITY HALL BACKGROUND ─────────────────────────────────────────────────
+    drawCityHallBG() {
+        const g = this.add.graphics();
+
+        // Base fill
+        g.fillStyle(0x080616, 1);
+        g.fillRect(0, 0, W, H);
+
+        // Columns
+        for (let c = 0; c < 6; c++) {
+            const colX = c * 160 - 20;
+            g.fillStyle(0x1c1840, 1);
+            g.fillRect(colX, 60, 28, GROUND_Y - 60);
+            g.fillStyle(0x2a2558, 1);
+            g.fillRect(colX - 8, 58, 44, 20);
+            g.fillRect(colX - 8, GROUND_Y - 20, 44, 20);
+        }
+
+        // Dome arc at top
+        g.lineStyle(2, C.teal, 0.2);
+        g.beginPath();
+        g.arc(W / 2, -10, 300, 0, Math.PI, false);
+        g.strokePath();
+        g.lineStyle(1, C.teal, 0.1);
+        g.beginPath();
+        g.arc(W / 2, -10, 260, 0, Math.PI, false);
+        g.strokePath();
+
+        // Central eye motif in dome
+        g.lineStyle(1, C.gold, 0.18);
+        g.strokeCircle(W / 2, 110, 65);
+        g.strokeCircle(W / 2, 110, 32);
+        g.fillStyle(C.gold, 0.06);
+        g.fillCircle(W / 2, 110, 16);
+        // Sunburst rays
+        for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2;
+            g.lineStyle(1, C.gold, 0.07);
+            g.lineBetween(W / 2, 110, W / 2 + Math.cos(a) * 90, 110 + Math.sin(a) * 90);
+        }
+        // Eye lids
+        g.lineStyle(2, C.gold, 0.25);
+        g.beginPath();
+        g.arc(W / 2, 132, 44, 3.66, 5.76, false);
+        g.strokePath();
+        g.beginPath();
+        g.arc(W / 2, 88, 44, 0.52, 2.62, false);
+        g.strokePath();
+
+        // Floor tiles with eye motif
+        for (let tx = 0; tx < W; tx += 60) {
+            for (let ty = GROUND_Y - 10; ty < H; ty += 42) {
+                g.lineStyle(1, C.teal, 0.07);
+                g.strokeRect(tx, ty, 60, 42);
+                g.fillStyle(C.teal, 0.03);
+                g.fillCircle(tx + 30, ty + 21, 9);
+                g.lineStyle(1, C.teal, 0.04);
+                g.strokeCircle(tx + 30, ty + 21, 5);
+            }
         }
     }
 }
 
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
 const config = {
     type: Phaser.AUTO,
-    width: 800,
-    height: 600,
+    width: W,
+    height: H,
     parent: 'game-container',
+    backgroundColor: '#1a0f1a',
     physics: {
         default: 'arcade',
-        arcade: { gravity: { y: 300 }, debug: false }
+        arcade: { gravity: { y: 520 }, debug: false }
     },
-    scene: [BootScene, PlayScene]
+    scene: [BootScene, TitleScene, HeroSelectScene, StoryScene, PlayScene]
 };
 
 const game = new Phaser.Game(config);
