@@ -2,23 +2,43 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>DogStrike: Union Strong</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
         body {
             background-color: #1a0f1a;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            width: 100%;
+            height: 100vh;    /* fallback for older iOS */
+            height: 100dvh;   /* dynamic viewport height — shrinks when browser chrome appears */
+            overflow: hidden;
+            touch-action: none;
             font-family: 'Courier New', Courier, monospace;
         }
         #game-container {
             border: 3px solid #d4af37;
             box-shadow: 0 0 40px rgba(212,175,55,0.3), 0 0 80px rgba(0,0,0,0.8);
+        }
+        /* Touch screens: fill entire viewport, no decorative border */
+        @media (hover: none) and (pointer: coarse) {
+            #game-container {
+                border: none;
+                box-shadow: none;
+                width: 100%;
+                height: 100%;
+            }
         }
         #controls-hint {
             margin-top: 12px;
@@ -495,7 +515,18 @@ class TitleScene extends Phaser.Scene {
             fontSize: '10px', fill: '#4a3a1a', letterSpacing: 2
         }).setOrigin(0.5);
 
-        const go = () => this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        const go = () => {
+            // Request native fullscreen on touch devices (works on Android Chrome;
+            // iOS Safari ignores this but the PWA meta tags handle home-screen mode)
+            if (this.sys.game.device.input.touch) {
+                const el = document.documentElement;
+                try {
+                    if (el.requestFullscreen) el.requestFullscreen();
+                    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+                } catch(e) {}
+            }
+            this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        };
         this.input.keyboard.once('keydown-SPACE', go);
         this.input.once('pointerdown', go);
     }
@@ -1541,6 +1572,7 @@ const config = {
     scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
+        expandParent: false,
     },
     input: {
         activePointers: 5,
