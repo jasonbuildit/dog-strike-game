@@ -30,10 +30,48 @@
         @media (hover: none) and (pointer: coarse) {
             #controls-hint { display: none; }
         }
+
+        /* Rotation prompt — hidden by default, shown on portrait phones */
+        #rotate-prompt {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #1a0f1a;
+            color: #d4af37;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+        #rotate-inner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            font-size: 14px;
+            border: 1px solid #d4af37;
+            padding: 32px 48px;
+        }
+        #rotate-inner::before {
+            content: '↺';
+            font-size: 48px;
+            display: block;
+        }
+        @media (pointer: coarse) and (orientation: portrait) and (max-width: 767px) {
+            #rotate-prompt  { display: flex; }
+            #game-container { visibility: hidden; }
+            #controls-hint  { display: none; }
+        }
     </style>
 </head>
 <body>
     <div id="game-container"></div>
+    <div id="rotate-prompt">
+        <div id="rotate-inner"><span>Rotate to landscape</span></div>
+    </div>
     <div id="controls-hint">← → Move &nbsp;|&nbsp; ↑ Jump &nbsp;|&nbsp; SPACE Strike &nbsp;|&nbsp; X Special Power &nbsp;|&nbsp; R Restart</div>
 
 <script>
@@ -1376,7 +1414,9 @@ class PlayScene extends Phaser.Scene {
 
     // ── TOUCH CONTROLS ───────────────────────────────────────────────────────
     createTouchButtons() {
-        const r = 28, y = 565;
+        const scaleFactor = this.scale.displayScale.x;
+        const r = Math.max(28, Math.ceil(22 / scaleFactor));
+        const y = H - 35;
         const makeBtn = (x, label, onDown, onUp) => {
             const g = this.add.graphics().setDepth(50).setScrollFactor(0);
             this.add.text(x, y, label, { fontSize: '20px', fill: '#ffffff', fontStyle: 'bold' })
