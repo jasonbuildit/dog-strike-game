@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <title>DogStrike: Union Strong</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
@@ -25,6 +26,9 @@
             font-size: 12px;
             letter-spacing: 2px;
             text-transform: uppercase;
+        }
+        @media (hover: none) and (pointer: coarse) {
+            #controls-hint { display: none; }
         }
     </style>
 </head>
@@ -875,6 +879,9 @@ class PlayScene extends Phaser.Scene {
         this.powerKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
         this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
+        this.touch = { left: false, right: false, up: false, strikeFired: false, powerFired: false };
+        this.createTouchButtons();
+
         this.strikeRing = this.add.circle(0, 0, 80, C.gold, 0).setDepth(10);
 
         // Animation state
@@ -960,20 +967,28 @@ class PlayScene extends Phaser.Scene {
     update() {
         if (this.waveCleared || this.gameOver) return;
 
-        if (this.cursors.left.isDown)       { this.player.setVelocityX(-this.hero.speed); this.player.setFlipX(true); }
-        else if (this.cursors.right.isDown) { this.player.setVelocityX(this.hero.speed);  this.player.setFlipX(false); }
-        else                                { this.player.setVelocityX(0); }
+        const left  = this.cursors.left.isDown  || this.touch.left;
+        const right = this.cursors.right.isDown || this.touch.right;
+        if (left)       { this.player.setVelocityX(-this.hero.speed); this.player.setFlipX(true); }
+        else if (right) { this.player.setVelocityX(this.hero.speed);  this.player.setFlipX(false); }
+        else            { this.player.setVelocityX(0); }
 
         // Keep aura tracking the player feet
         this.heroAura.setPosition(this.player.x, this.player.y + 38);
 
-        if (this.cursors.up.isDown && this.player.body.blocked.down) this.player.setVelocityY(-440);
+        if ((this.cursors.up.isDown || this.touch.up) && this.player.body.blocked.down) this.player.setVelocityY(-440);
 
         if (this.strikeCD > 0) this.strikeCD--;
-        if (Phaser.Input.Keyboard.JustDown(this.strikeKey) && this.strikeCD === 0) this.performStrike();
+        if ((Phaser.Input.Keyboard.JustDown(this.strikeKey) || this.touch.strikeFired) && this.strikeCD === 0) {
+            this.touch.strikeFired = false;
+            this.performStrike();
+        }
 
         if (this.powerCD > 0) this.powerCD--;
-        if (Phaser.Input.Keyboard.JustDown(this.powerKey) && this.powerCD === 0) this.performSpecialPower();
+        if ((Phaser.Input.Keyboard.JustDown(this.powerKey) || this.touch.powerFired) && this.powerCD === 0) {
+            this.touch.powerFired = false;
+            this.performSpecialPower();
+        }
 
         if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
 
@@ -1332,12 +1347,12 @@ class PlayScene extends Phaser.Scene {
         this.add.text(W / 2, H / 2 - 36, 'Score: ' + this.score, { fontSize: '20px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
         this.add.text(W / 2, H / 2 + 4,  'Morale Bonus: +' + bonus, { fontSize: '14px', fill: C.tealS }).setOrigin(0.5).setDepth(21);
 
-        const nextLabel = (nextWave === 4) ? 'SPACE → The Storming of City Hall...'
-                        : (nextWave === 7) ? 'SPACE → Into the Rotunda...'
-                        : 'SPACE → Next Wave';
+        const nextLabel = (nextWave === 4) ? 'TAP  or  SPACE → The Storming of City Hall...'
+                        : (nextWave === 7) ? 'TAP  or  SPACE → Into the Rotunda...'
+                        : 'TAP  or  SPACE → Next Wave';
         this.add.text(W / 2, H / 2 + 74, nextLabel, { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
 
-        this.input.keyboard.once('keydown-SPACE', () => {
+        const advance = () => {
             if (nextWave === 4) {
                 this.scene.start('StoryScene', { beatIndex: 0, heroId: this.hero.id, wave: nextWave, score: this.score });
             } else if (nextWave === 7) {
@@ -1345,7 +1360,9 @@ class PlayScene extends Phaser.Scene {
             } else {
                 this.scene.start('HeroSelectScene', { wave: nextWave, score: this.score });
             }
-        });
+        };
+        this.input.keyboard.once('keydown-SPACE', advance);
+        this.input.once('pointerdown', advance);
     }
 
     showGameOver() {
@@ -1353,7 +1370,36 @@ class PlayScene extends Phaser.Scene {
         this.add.text(W / 2, H / 2 - 85, '— UNION BROKEN —',          { fontSize: '26px', fill: C.crimsonS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
         this.add.text(W / 2, H / 2 - 38, 'Fell on Wave ' + this.wave,  { fontSize: '18px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
         this.add.text(W / 2, H / 2 + 4,  'Final Score: ' + this.score, { fontSize: '22px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
-        this.add.text(W / 2, H / 2 + 76, 'R → Back to Hero Select',    { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 76, 'TAP  or  R → Hero Select',   { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
+        this.input.once('pointerdown', () => this.scene.start('HeroSelectScene', { wave: 1, score: 0 }));
+    }
+
+    // ── TOUCH CONTROLS ───────────────────────────────────────────────────────
+    createTouchButtons() {
+        const r = 28, y = 565;
+        const makeBtn = (x, label, onDown, onUp) => {
+            const g = this.add.graphics().setDepth(50).setScrollFactor(0);
+            this.add.text(x, y, label, { fontSize: '20px', fill: '#ffffff', fontStyle: 'bold' })
+                .setOrigin(0.5).setDepth(51).setScrollFactor(0);
+            const zone = this.add.zone(x, y, r * 2, r * 2).setInteractive().setDepth(52).setScrollFactor(0);
+            const draw = (on) => {
+                g.clear();
+                g.fillStyle(C.dark, on ? 0.72 : 0.38);
+                g.lineStyle(2, C.gold, on ? 0.9 : 0.5);
+                g.fillCircle(x, y, r);
+                g.strokeCircle(x, y, r);
+            };
+            draw(false);
+            zone.on('pointerdown',   () => { draw(true);  onDown(); });
+            zone.on('pointerup',     () => { draw(false); onUp();   });
+            zone.on('pointerout',    () => { draw(false); onUp();   });
+            zone.on('pointercancel', () => { draw(false); onUp();   });
+        };
+        makeBtn(48,  '←', () => { this.touch.left  = true;  }, () => { this.touch.left  = false; });
+        makeBtn(118, '→', () => { this.touch.right = true;  }, () => { this.touch.right = false; });
+        makeBtn(652, '↑', () => { this.touch.up    = true;  }, () => { this.touch.up    = false; });
+        makeBtn(722, '⚡', () => { this.touch.strikeFired = true; }, () => {});
+        makeBtn(786, '★', () => { this.touch.powerFired  = true; }, () => {});
     }
 
     // ── CITY HALL BACKGROUND ─────────────────────────────────────────────────
@@ -1426,6 +1472,13 @@ const config = {
     height: H,
     parent: 'game-container',
     backgroundColor: '#1a0f1a',
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
+    input: {
+        activePointers: 5,
+    },
     physics: {
         default: 'arcade',
         arcade: { gravity: { y: 520 }, debug: false }
