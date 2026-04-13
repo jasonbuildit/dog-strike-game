@@ -67,4 +67,4 @@ Background keys are rotated per wave in `PlayScene.init()` to vary visual feel w
 - **Graceful asset fallback**: BootScene generates a solid-color placeholder texture for any image that fails to load. New assets should follow the same pattern in the `assetDefs` array (add `key`, `path`, `w`, `h`, `color`).
 - **Procedural Art Deco visuals**: Backgrounds, UI chrome, and special-power effects are drawn with Phaser Graphics calls, not external images. The recurring "all-seeing eye" motif appears in `drawDecoEyeStatic` (static) and `drawDecoEye` (animated, destroys itself after tweening out).
 - **Scene data passing**: All persistent state (wave number, score, hero selection) is passed explicitly via `scene.start(key, data)` — there is no global state or registry used between scenes.
-- **No spritesheet animations**: The game uses tween-based squash-and-stretch on static sprites rather than frame animations.
+

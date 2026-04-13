@@ -315,7 +315,7 @@ function createHeroAnimations(scene) {
             if (scene.anims.exists(id + '_' + a)) scene.anims.remove(id + '_' + a);
         });
         scene.anims.create({ key: id + '_idle',
-            frames: [{ key, frame: 0 }, { key, frame: 1 }], frameRate: 3,  repeat: -1 });
+            frames: [{ key, frame: 0 }, { key, frame: 1 }], frameRate: 2,  repeat: -1 });
         scene.anims.create({ key: id + '_walk',
             frames: [{ key, frame: 2 }, { key, frame: 3 }, { key, frame: 4 }, { key, frame: 5 }],
             frameRate: 10, repeat: -1 });
@@ -425,7 +425,7 @@ class TitleScene extends Phaser.Scene {
         const title = this.add.text(W / 2, H / 2 - 60, 'DOGSTRIKE', {
             fontSize: '62px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 10
         }).setOrigin(0.5);
-        this.tweens.add({ targets: title, alpha: 0.35, duration: 1300, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+        this.tweens.add({ targets: title, alpha: 0.5, duration: 2200, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
 
         this.add.text(W / 2, H / 2 + 4, 'UNION STRONG', {
             fontSize: '18px', fill: C.creamS, letterSpacing: 8
@@ -438,7 +438,7 @@ class TitleScene extends Phaser.Scene {
         const prompt = this.add.text(W / 2, H / 2 + 100, 'PRESS SPACE TO BEGIN', {
             fontSize: '14px', fill: C.goldS, letterSpacing: 3
         }).setOrigin(0.5);
-        this.tweens.add({ targets: prompt, alpha: 0.2, duration: 650, yoyo: true, repeat: -1 });
+        this.tweens.add({ targets: prompt, alpha: 0.2, duration: 950, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
 
         this.add.text(W / 2, H - 24, 'v0.3  |  DOGSONSTRIKE.COM', {
             fontSize: '10px', fill: '#4a3a1a', letterSpacing: 2
@@ -500,9 +500,9 @@ class HeroSelectScene extends Phaser.Scene {
             // Float each hero with a slightly different period so they move out of sync
             this.tweens.add({
                 targets: heroImg,
-                y: cy - 62 - 8,
-                scaleX: 1.04, scaleY: 0.97,
-                duration: 780 + (num - 1) * 140,
+                y: cy - 62 - 11,
+                scaleX: 1.03, scaleY: 0.98,
+                duration: 1400 + (num - 1) * 220,
                 ease: 'Sine.InOut',
                 yoyo: true, repeat: -1,
             });
@@ -630,7 +630,7 @@ class StoryScene extends Phaser.Scene {
         });
 
         const prompt = this.add.text(W / 2, H - 18, 'SPACE → Continue', { fontSize: '13px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
-        this.tweens.add({ targets: prompt, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 });
+        this.tweens.add({ targets: prompt, alpha: 0.25, duration: 950, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
 
         const go = () => this.scene.start('HeroSelectScene', { wave: this.wave, score: this.score });
         this.input.keyboard.once('keydown-SPACE', go);
@@ -850,9 +850,9 @@ class PlayScene extends Phaser.Scene {
         this.heroAura = this.add.ellipse(120, GROUND_Y - 4, 70, 18, this.hero.color, 0).setDepth(0);
         this.tweens.add({
             targets: this.heroAura,
-            alpha: 0.22,
-            scaleX: 1.18, scaleY: 1.1,
-            duration: 950, ease: 'Sine.InOut',
+            alpha: 0.28,
+            scaleX: 1.12, scaleY: 1.08,
+            duration: 1600, ease: 'Sine.InOut',
             yoyo: true, repeat: -1,
         });
         this.physics.add.collider(this.player, this.ground);
