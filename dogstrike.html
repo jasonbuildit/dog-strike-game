@@ -277,20 +277,22 @@ function _drawDogFrame(ctx, ox, oy, fw, fh, cfg, frameIdx) {
 }
 
 function createHeroSpritesheets(scene) {
-    const FW = 64, FH = 80, NF = 8;
+    // Frame dimensions match the AI-generated sheets (128×160 @ 2x, 11 frames).
+    // Frames 0-7: same poses as before. Frames 8-10: special power windup/peak/release.
+    const FW = 128, FH = 160, NF = 11;
     const CFGS = [
         { id: 'saint',     key: 'hero_saint_sheet',
           pc: '#e8c45a', dc: '#9a6214', ac: '#f5ead0', hatC: '#2a1608', hatA: '#d4af37',
           ears: 'floppy',     hat: 'cap',
-          hRx: 11, hRy: 10, sL: 8,  sH: 5, bW: 26, bH: 24, lW: 9, lH: 19 },
+          hRx: 22, hRy: 20, sL: 16, sH: 10, bW: 52, bH: 48, lW: 18, lH: 38 },
         { id: 'shepherd',  key: 'hero_shepherd_sheet',
           pc: '#8b9e6c', dc: '#3d4e2c', ac: '#c8a96e', hatC: '#4a3a5a', hatA: '#2a9d8f',
           ears: 'pointed',    hat: 'beret',
-          hRx: 10, hRy:  9, sL: 9,  sH: 4, bW: 24, bH: 22, lW: 8, lH: 18 },
+          hRx: 20, hRy: 18, sL: 18, sH:  8, bW: 48, bH: 44, lW: 16, lH: 36 },
         { id: 'dachshund', key: 'hero_dachshund_sheet',
           pc: '#c1440e', dc: '#7a2808', ac: '#e8a050', hatC: '#f0a010', hatA: '#ffee44',
           ears: 'floppy_low', hat: 'helmet',
-          hRx: 10, hRy:  9, sL: 11, sH: 4, bW: 32, bH: 18, lW: 7, lH: 15 },
+          hRx: 20, hRy: 18, sL: 22, sH:  8, bW: 64, bH: 36, lW: 14, lH: 30 },
     ];
     CFGS.forEach(cfg => {
         if (scene.textures.exists(cfg.key)) scene.textures.remove(cfg.key);
@@ -309,7 +311,7 @@ function createHeroAnimations(scene) {
         { id: 'shepherd',  key: 'hero_shepherd_sheet'  },
         { id: 'dachshund', key: 'hero_dachshund_sheet' },
     ].forEach(({ id, key }) => {
-        ['idle', 'walk', 'jump', 'strike'].forEach(a => {
+        ['idle', 'walk', 'jump', 'strike', 'special'].forEach(a => {
             if (scene.anims.exists(id + '_' + a)) scene.anims.remove(id + '_' + a);
         });
         scene.anims.create({ key: id + '_idle',
@@ -321,6 +323,10 @@ function createHeroAnimations(scene) {
             frames: [{ key, frame: 6 }], frameRate: 1, repeat: 0 });
         scene.anims.create({ key: id + '_strike',
             frames: [{ key, frame: 7 }, { key, frame: 0 }], frameRate: 14, repeat: 0 });
+        // Frames 8-10: special power windup → peak → release
+        scene.anims.create({ key: id + '_special',
+            frames: [{ key, frame: 8 }, { key, frame: 9 }, { key, frame: 10 }, { key, frame: 0 }],
+            frameRate: 8, repeat: 0 });
     });
 }
 
@@ -354,6 +360,16 @@ class BootScene extends Phaser.Scene {
         ];
         this.load.on('loaderror', (f) => this.failedKeys.add(f.key));
         this.assetDefs.forEach(d => { if (d.path) this.load.image(d.key, d.path); });
+
+        // Attempt to load AI-generated hero spritesheets (128×160 per frame, 11 frames wide).
+        // If these PNGs exist the Canvas 2D fallback is skipped; missing files gracefully fall back.
+        [
+            { key: 'hero_saint_sheet',     path: './assets/dogs/hero_saint_sheet.png'     },
+            { key: 'hero_shepherd_sheet',  path: './assets/dogs/hero_shepherd_sheet.png'  },
+            { key: 'hero_dachshund_sheet', path: './assets/dogs/hero_dachshund_sheet.png' },
+        ].forEach(s => {
+            this.load.spritesheet(s.key, s.path, { frameWidth: 128, frameHeight: 160 });
+        });
     }
 
     makeRect(key, w, h, color) {
@@ -372,7 +388,16 @@ class BootScene extends Phaser.Scene {
                 if (!this.textures.exists(d.key)) this.makeRect(d.key, d.w, d.h, d.color);
             }
         });
-        createHeroSpritesheets(this);
+
+        // Use AI-generated sheets if all three loaded; otherwise fall back to Canvas 2D drawing.
+        const sheetKeys = ['hero_saint_sheet', 'hero_shepherd_sheet', 'hero_dachshund_sheet'];
+        const sheetsLoaded = sheetKeys.every(k => !this.failedKeys.has(k) && this.textures.exists(k));
+        if (!sheetsLoaded) {
+            console.log('[DogStrike] AI sheets not found — using Canvas 2D fallback sprites');
+            createHeroSpritesheets(this);
+        } else {
+            console.log('[DogStrike] AI-generated hero sheets loaded');
+        }
         createHeroAnimations(this);
         this.scene.start('TitleScene');
     }
@@ -1054,6 +1079,10 @@ class PlayScene extends Phaser.Scene {
     }
 
     powerUnityHowl() {
+        this.player.anims.play('saint_special', true);
+        this.time.delayedCall(500, () => {
+            if (!this.waveCleared && !this.gameOver) this.player.anims.play('saint_idle', true);
+        });
         this.cameras.main.shake(300, 0.018);
         const cx = this.player.x, cy = this.player.y;
         this.showPopup(cx, cy - 70, '— UNITY HOWL —', C.goldS);
@@ -1091,6 +1120,10 @@ class PlayScene extends Phaser.Scene {
     }
 
     powerAuthorityBark() {
+        this.player.anims.play('shepherd_special', true);
+        this.time.delayedCall(500, () => {
+            if (!this.waveCleared && !this.gameOver) this.player.anims.play('shepherd_idle', true);
+        });
         this.cameras.main.shake(200, 0.012);
         const cx = this.player.x, cy = this.player.y;
         const dir = this.player.flipX ? -1 : 1;
@@ -1133,6 +1166,10 @@ class PlayScene extends Phaser.Scene {
     }
 
     powerTechSabotage() {
+        this.player.anims.play('dachshund_special', true);
+        this.time.delayedCall(500, () => {
+            if (!this.waveCleared && !this.gameOver) this.player.anims.play('dachshund_idle', true);
+        });
         this.cameras.main.shake(150, 0.01);
         const cx = this.player.x, cy = this.player.y;
         this.showPopup(cx, cy - 70, '— TECH SABOTAGE —', C.tealS);
