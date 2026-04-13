@@ -548,6 +548,12 @@ class HeroSelectScene extends Phaser.Scene {
 
     create() {
         this.add.rectangle(W / 2, H / 2, W, H, C.dark, 1);
+        const hsBgKey = this.unlockedWave >= 7 ? 'bg_cityhall_nd' : 'bg_factory_nh';
+        const hsBg = this.add.image(W / 2, H / 2, hsBgKey)
+            .setAlpha(0.10).setDisplaySize(W * 1.15, H * 1.15);
+        const hsPan = Math.round((W * 0.15) / 2);
+        this.tweens.add({ targets: hsBg, x: W / 2 + hsPan,
+            duration: 25000, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
         drawDecoBorder(this);
 
         this.add.text(W / 2, 48, 'DOGSTRIKE', { fontSize: '36px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 8 }).setOrigin(0.5);
@@ -685,6 +691,12 @@ class StoryScene extends Phaser.Scene {
         const beat = beats[Math.min(this.beatIndex, beats.length - 1)];
 
         this.add.rectangle(W / 2, H / 2, W, H, 0x080510, 1);
+        const stBgKey = this.beatIndex === 0 ? 'bg_factory_ne' : 'bg_cityhall_ne';
+        const stBg = this.add.image(W / 2, H / 2, stBgKey)
+            .setAlpha(0.08).setDisplaySize(W * 1.15, H * 1.15);
+        const stPan = Math.round((W * 0.15) / 2);
+        this.tweens.add({ targets: stBg, x: W / 2 + stPan,
+            duration: 30000, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
 
         // Title band
         this.add.rectangle(W / 2, 38, W, 76, 0x110d20, 1);
