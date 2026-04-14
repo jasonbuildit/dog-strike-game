@@ -949,7 +949,6 @@ class PlayScene extends Phaser.Scene {
         for (let x = 0; x < W; x += 64) {
             this.ground.create(x + 32, GROUND_Y + 16, groundKey);
         }
-        this.buildConveyors();
 
         this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.sheetKey, 0);
         this.player.setCollideWorldBounds(true);
@@ -972,6 +971,9 @@ class PlayScene extends Phaser.Scene {
         this.robots = this.physics.add.group();
         this.physics.add.collider(this.robots, this.ground);
         this.physics.add.overlap(this.player, this.robots, this.onHit, null, this);
+
+        // Build conveyor belts AFTER player + robots exist (colliders need both objects)
+        this.buildConveyors();
 
         this.spawnQueue = this.calcWaveCount();
         const interval = Math.max(400, 1400 - this.wave * 80);
@@ -1024,8 +1026,8 @@ class PlayScene extends Phaser.Scene {
         this.physics.add.collider(this.robots, this.conveyors,
             null, (r) => r.body.velocity.y >= 0, this);
 
-        // Static structure — drawn once (support legs + belt frame)
-        const sg = this.add.graphics();
+        // Static structure — drawn once (support legs + belt frame); depth -1 so belts render behind player
+        const sg = this.add.graphics().setDepth(-1);
         this.beltDefs.forEach(b => {
             const lx = b.cx - b.w / 2, rx = b.cx + b.w / 2;
             sg.lineStyle(3, 0x223344, 0.75);
@@ -1035,8 +1037,8 @@ class PlayScene extends Phaser.Scene {
             sg.strokeRect(lx, b.y - 6, b.w, 12);
         });
 
-        // Animated belt surface — redrawn in animateBelts()
-        this.beltGfx = this.add.graphics();
+        // Animated belt surface — redrawn in animateBelts(); depth -1 to stay behind player
+        this.beltGfx = this.add.graphics().setDepth(-1);
         this.beltOffset = 0;
         this.platSpawnToggle = false;  // alternates which belt gets the next platform spawn
     }
