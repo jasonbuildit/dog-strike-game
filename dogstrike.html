@@ -167,6 +167,7 @@ const SFX = (() => {
         },
         waveClear() { [261,329,392,523].forEach((n,i) => setTimeout(() => osc(n,'sine',0.28,0.32), i*110)); },
         gameOver()  { [392,330,261,196].forEach((n,i) => setTimeout(() => osc(n,'sawtooth',0.24,0.36), i*170)); },
+        stomp()     { burst(0.32, 0.11, 400); osc(95, 'sawtooth', 0.28, 0.14, 38); },
     };
 })();
 
@@ -1374,6 +1375,7 @@ class PlayScene extends Phaser.Scene {
             duration: 300, ease: 'Expo.Out', onComplete: () => this.strikeRing.setScale(1) });
 
         let hit = false;
+        let hitRx = px, hitRy = py, hitIsBoss = false, hitIsAdmin = false;
         this.robots.children.entries.forEach(robot => {
             if (!robot.active) return;
             if (Phaser.Math.Distance.BetweenPoints(this.player, robot) >= this.hero.strikeRange) return;
@@ -1386,13 +1388,20 @@ class PlayScene extends Phaser.Scene {
             robot.hp--;
             this.cameras.main.shake(70, 0.005);
             if (robot.hp <= 0) {
+                hitRx = robot.x; hitRy = robot.y;
+                hitIsBoss = robot.isBoss; hitIsAdmin = robot.isAdmin;
                 const pts = robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
                 this.score += pts;
                 this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
-                this.burstEffect(robot.x, robot.y, C.gold);
-                SFX.destroy(robot.isBoss);
-                robot.destroy();
+                const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
+                robot.setVisible(false);
+                robot.body.enable = false;
+                this.destroyEffect(bx, by, C.gold, bf, sf);
+                SFX.destroy(bf);
+                this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
             } else {
+                hitRx = robot.x; hitRy = robot.y;
+                hitIsBoss = robot.isBoss; hitIsAdmin = robot.isAdmin;
                 robot.setTint(0xff4444);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
                 SFX.hit();
@@ -1402,6 +1411,46 @@ class PlayScene extends Phaser.Scene {
 
         if (!hit) SFX.miss();
         this.showPopup(px, py - 50, hit ? 'STRIKE!' : 'MISS', hit ? C.goldS : C.orangeS);
+        this.strikeEffects(hit, hitRx, hitRy, hitIsBoss, hitIsAdmin);
+    }
+
+    strikeEffects(hit, hitX, hitY, isBoss, isAdmin) {
+        const px = this.player.x, py = this.player.y;
+        const facing = this.player.flipX ? Math.PI : 0;
+
+        // Directional slash trail — 3 hero-colored arcs fanning in facing direction
+        const slashG = this.add.graphics().setDepth(11);
+        [[-0.45, 55, 4, 0.75], [0, 70, 3, 0.55], [0.45, 85, 2, 0.35]].forEach(([off, r, w, a]) => {
+            const span = 0.65, mid = facing + off;
+            slashG.lineStyle(w, this.hero.color, a);
+            slashG.beginPath();
+            slashG.arc(px, py, r, mid - span / 2, mid + span / 2, false);
+            slashG.strokePath();
+        });
+        this.tweens.add({ targets: slashG, scaleX: 1.6, scaleY: 1.6, alpha: 0,
+            duration: 200, ease: 'Quad.Out', onComplete: () => slashG.destroy() });
+
+        if (!hit) return;
+
+        // Impact flash at contact point
+        const flash = this.add.circle(hitX, hitY, 24, 0xffffff, 0.9).setDepth(13);
+        this.tweens.add({ targets: flash, scaleX: 2.2, scaleY: 2.2, alpha: 0,
+            duration: 80, ease: 'Quad.Out', onComplete: () => flash.destroy() });
+
+        // Fast sharp ring at contact point
+        const hitRing = this.add.graphics().setDepth(12);
+        hitRing.lineStyle(3, 0xffffff, 0.95);
+        hitRing.strokeCircle(hitX, hitY, 30);
+        this.tweens.add({ targets: hitRing, scaleX: 2.4, scaleY: 2.4, alpha: 0,
+            duration: 160, ease: 'Expo.Out', onComplete: () => hitRing.destroy() });
+
+        // Vignette flash on boss/admin kill
+        if (isBoss || isAdmin) {
+            const vig = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0).setDepth(9);
+            this.tweens.add({ targets: vig, alpha: 0.10, duration: 60, ease: 'Quad.In',
+                yoyo: true, onComplete: () => vig.destroy() });
+            this.cameras.main.shake(90, 0.009);
+        }
     }
 
     // ── SPECIAL POWERS ───────────────────────────────────────────────────────
@@ -1450,9 +1499,12 @@ class PlayScene extends Phaser.Scene {
                 const pts = robot.isBoss ? 250 : robot.isAdmin ? 180 : robot.isShielded ? 120 : 80;
                 this.score += pts;
                 this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
-                this.burstEffect(robot.x, robot.y, C.gold);
-                SFX.destroy(robot.isBoss);
-                robot.destroy();
+                const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
+                robot.setVisible(false);
+                robot.body.enable = false;
+                this.destroyEffect(bx, by, C.gold, bf, sf);
+                SFX.destroy(bf);
+                this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
             });
         });
     }
@@ -1535,9 +1587,12 @@ class PlayScene extends Phaser.Scene {
                     const pts = robot.isBoss ? 280 : robot.isAdmin ? 200 : 130;
                     this.score += pts;
                     this.showPopup(robot.x, robot.y - 40, '+' + pts, C.tealS);
-                    this.burstEffect(robot.x, robot.y, C.teal);
-                    SFX.destroy(robot.isBoss);
-                    robot.destroy();
+                    const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
+                    robot.setVisible(false);
+                    robot.body.enable = false;
+                    this.destroyEffect(bx, by, C.teal, bf, sf);
+                    SFX.destroy(bf);
+                    this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
                 } else {
                     robot.clearTint();
                     robot.isShielded = false;
@@ -1633,15 +1688,80 @@ class PlayScene extends Phaser.Scene {
             duration: 650, ease: 'Cubic.Out', onComplete: () => g.destroy() });
     }
 
-    burstEffect(x, y, color) {
-        const g = this.add.graphics().setDepth(15);
-        g.fillStyle(color, 0.9);
-        for (let i = 0; i < 8; i++) {
-            const a = (i / 8) * Math.PI * 2;
-            g.fillCircle(x + Math.cos(a) * 22, y + Math.sin(a) * 22, 5);
+    burstEffect(x, y, color) { this.destroyEffect(x, y, color, false, false); }
+
+    destroyEffect(x, y, color, isBoss, isShielded) {
+        const ringColor = isShielded ? C.teal : color;
+
+        // Layer 1 — inner flash (immediate)
+        const flash = this.add.graphics().setDepth(15);
+        flash.fillStyle(0xffffff, 0.9);
+        flash.fillCircle(x, y, isBoss ? 28 : 18);
+        this.tweens.add({ targets: flash, scaleX: 3.4, scaleY: 3.4, alpha: 0,
+            duration: 120, ease: 'Quad.Out', onComplete: () => flash.destroy() });
+
+        // Layer 2 — shrapnel lines + debris dots (50ms)
+        this.time.delayedCall(50, () => {
+            const count = isBoss ? 14 : 8;
+            const lines = this.add.graphics().setDepth(15);
+            for (let i = 0; i < count; i++) {
+                const a = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+                const len = Phaser.Math.Between(22, 48);
+                lines.lineStyle(Phaser.Math.Between(1, 3), ringColor, 0.85);
+                lines.beginPath();
+                lines.moveTo(x, y);
+                lines.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+                lines.strokePath();
+            }
+            this.tweens.add({ targets: lines, scaleX: 2.2, scaleY: 2.2, alpha: 0,
+                duration: 280, ease: 'Quad.Out', onComplete: () => lines.destroy() });
+
+            const dots = this.add.graphics().setDepth(15);
+            dots.fillStyle(ringColor, 0.9);
+            for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                dots.fillCircle(x + Math.cos(a) * 30, y + Math.sin(a) * 30, 5);
+            }
+            this.tweens.add({ targets: dots, scaleX: 2.5, scaleY: 2.5, alpha: 0,
+                duration: 350, ease: 'Cubic.Out', onComplete: () => dots.destroy() });
+        });
+
+        // Layer 3 — outer ring (100ms)
+        this.time.delayedCall(100, () => {
+            const ring = this.add.graphics().setDepth(14);
+            ring.lineStyle(3, ringColor, 0.75);
+            ring.strokeCircle(x, y, 24);
+            this.tweens.add({ targets: ring, scaleX: 4.5, scaleY: 4.5, alpha: 0,
+                duration: 300, ease: 'Expo.Out', onComplete: () => ring.destroy() });
+        });
+
+        // Shielded extras — two quick teal crack-rings
+        if (isShielded) {
+            [0, 40].forEach(d => this.time.delayedCall(d, () => {
+                const sr = this.add.graphics().setDepth(15);
+                sr.lineStyle(2, C.teal, 0.85);
+                sr.strokeCircle(x, y, 32);
+                this.tweens.add({ targets: sr, scaleX: 3.8, scaleY: 3.8, alpha: 0,
+                    duration: 220, ease: 'Expo.Out', onComplete: () => sr.destroy() });
+            }));
         }
-        this.tweens.add({ targets: g, alpha: 0, scaleX: 1.8, scaleY: 1.8,
-            duration: 300, onComplete: () => g.destroy() });
+
+        // Boss extras — large shockwave + deco eye
+        if (isBoss) {
+            const extra = this.add.graphics().setDepth(15);
+            extra.fillStyle(color, 0.55);
+            extra.fillCircle(x, y, 36);
+            this.tweens.add({ targets: extra, scaleX: 2.8, scaleY: 2.8, alpha: 0,
+                duration: 200, ease: 'Quad.Out', onComplete: () => extra.destroy() });
+            this.time.delayedCall(80, () => {
+                const shock = this.add.graphics().setDepth(14);
+                shock.lineStyle(5, color, 0.65);
+                shock.strokeCircle(x, y, 45);
+                this.tweens.add({ targets: shock, scaleX: 6, scaleY: 6, alpha: 0,
+                    duration: 500, ease: 'Expo.Out', onComplete: () => shock.destroy() });
+                this.drawDecoEye(x, y, color, 14);
+            });
+        }
     }
 
     showPopup(x, y, msg, color) {
@@ -1654,6 +1774,40 @@ class PlayScene extends Phaser.Scene {
     // ── COLLISION ────────────────────────────────────────────────────────────
     onHit(player, robot) {
         if (!robot.active) return;
+
+        // ── STOMP: player falling from above ──────────────────────────────
+        if (player.body.velocity.y > 150 && player.body.bottom <= robot.body.top + 18) {
+            if (robot._stomped) return;
+            robot._stomped = true;
+
+            const pts = robot.isBoss ? 500 : robot.isAdmin ? 350 : robot.isShielded ? 225 : 150;
+            robot.hp--;
+            this.score += pts;
+            this.showPopup(robot.x, robot.y - 40, 'STOMP! +' + pts, C.orangeS);
+            SFX.stomp();
+
+            if (robot.hp <= 0) {
+                const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
+                robot.setVisible(false);
+                robot.body.enable = false;
+                this.destroyEffect(bx, by, C.orange, bf, sf);
+                SFX.destroy(bf);
+                this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+            } else {
+                // Boss/admin — partial damage, flash orange tint, allow re-stomp after delay
+                robot.setTint(0xff7700);
+                this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
+                this.time.delayedCall(400, () => { if (robot.active) robot._stomped = false; });
+            }
+
+            this.cameras.main.shake(80, 0.008);
+            this.player.setVelocityY(-300);
+            this.animState = 'jump';
+            this.player.anims.play(this.hero.id + '_jump', true);
+            return;
+        }
+
+        // ── SIDE COLLISION: union damage ──────────────────────────────────
         const dmg = robot.isBoss ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
         this.unionPct -= dmg;
         SFX.hurt();
