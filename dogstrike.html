@@ -949,6 +949,7 @@ class PlayScene extends Phaser.Scene {
         for (let x = 0; x < W; x += 64) {
             this.ground.create(x + 32, GROUND_Y + 16, groundKey);
         }
+        this.buildConveyors();
 
         this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.sheetKey, 0);
         this.player.setCollideWorldBounds(true);
@@ -1001,6 +1002,45 @@ class PlayScene extends Phaser.Scene {
 
     calcWaveCount() { return Math.min(3 + this.wave * 2, 20); }
 
+    getBeltDefs() {
+        return [
+            { cx: 170, y: 370, w: 200, dir:  1 },   // left belt → arrows right
+            { cx: 630, y: 370, w: 200, dir: -1 },   // right belt ← arrows left
+        ];
+    }
+
+    buildConveyors() {
+        this.beltDefs = this.getBeltDefs();
+
+        // Physics bodies — invisible static sprites used as platform colliders
+        this.conveyors = this.physics.add.staticGroup();
+        this.beltDefs.forEach(b => {
+            const s = this.conveyors.create(b.cx, b.y, 'ground_tile');
+            s.setDisplaySize(b.w, 12).setAlpha(0).refreshBody();
+        });
+        // Top-only collision: only process when object is moving downward (no side-sticking)
+        this.physics.add.collider(this.player, this.conveyors,
+            null, (p) => p.body.velocity.y >= 0, this);
+        this.physics.add.collider(this.robots, this.conveyors,
+            null, (r) => r.body.velocity.y >= 0, this);
+
+        // Static structure — drawn once (support legs + belt frame)
+        const sg = this.add.graphics();
+        this.beltDefs.forEach(b => {
+            const lx = b.cx - b.w / 2, rx = b.cx + b.w / 2;
+            sg.lineStyle(3, 0x223344, 0.75);
+            sg.lineBetween(lx + 22, b.y + 6, lx + 22, GROUND_Y);
+            sg.lineBetween(rx - 22, b.y + 6, rx - 22, GROUND_Y);
+            sg.lineStyle(2, 0x3a5566, 0.9);
+            sg.strokeRect(lx, b.y - 6, b.w, 12);
+        });
+
+        // Animated belt surface — redrawn in animateBelts()
+        this.beltGfx = this.add.graphics();
+        this.beltOffset = 0;
+        this.platSpawnToggle = false;  // alternates which belt gets the next platform spawn
+    }
+
     spawnNext() {
         if (this.waveCleared) return;
         const isBoss  = (this.wave % 3 === 0) && (this.spawnQueue <= 1);
@@ -1012,10 +1052,38 @@ class PlayScene extends Phaser.Scene {
         else if (isAdmin) key = 'enemy_admin';
         else key = Math.random() > 0.6 ? 'enemy_heavy' : 'enemy_enforcer';
 
-        const x = Phaser.Math.Between(700, 790);
-        const y = GROUND_Y - (isBoss ? 70 : 50);
-        const bot = this.robots.create(x, y, key);
-        bot.setVelocityX(isBoss ? -28 : isAdmin ? Phaser.Math.Between(-90, -60) : Phaser.Math.Between(-75, -42));
+        // Speed scales with wave (+6% per wave above 1)
+        const speedMult = 1 + (this.wave - 1) * 0.06;
+
+        // Platform spawn: 25% chance for non-boss enemies from wave 2 onward
+        const isPlatform = !isBoss && this.wave >= 2 && Math.random() < 0.25;
+
+        let spawnX, spawnY, velX;
+        if (isPlatform) {
+            // Alternate between left and right conveyor belt
+            this.platSpawnToggle = !this.platSpawnToggle;
+            const belt = this.beltDefs[this.platSpawnToggle ? 0 : 1];
+            // Spawn at the input end — far edge in direction of travel, drops onto belt
+            spawnX = belt.dir > 0 ? belt.cx - belt.w / 2 + 10 : belt.cx + belt.w / 2 - 10;
+            spawnY = belt.y - 70;
+            velX   = belt.dir * Math.round(Phaser.Math.Between(42, 65) * speedMult);
+        } else if (isBoss) {
+            spawnX = Phaser.Math.Between(710, 790);
+            spawnY = GROUND_Y - 70;
+            velX   = -28;
+        } else {
+            // Bidirectional ground spawn (50/50 left or right)
+            const fromLeft = Math.random() < 0.5;
+            spawnX = fromLeft ? Phaser.Math.Between(10, 90) : Phaser.Math.Between(710, 790);
+            spawnY = GROUND_Y - 50;
+            const baseSpeed = isAdmin ? Phaser.Math.Between(60, 90) : Phaser.Math.Between(42, 75);
+            velX   = fromLeft
+                ? Math.round(baseSpeed * speedMult)
+                : -Math.round(baseSpeed * speedMult);
+        }
+
+        const bot = this.robots.create(spawnX, spawnY, key);
+        bot.setVelocityX(velX);
         bot.setDisplaySize(isBoss ? 80 : isAdmin ? 56 : 52, isBoss ? 88 : isAdmin ? 70 : 64);
         bot.setCollideWorldBounds(false);
         bot.isBoss     = isBoss;
@@ -1071,7 +1139,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     // ── UPDATE ───────────────────────────────────────────────────────────────
-    update() {
+    update(time, delta) {
         if (this.waveCleared || this.gameOver) return;
 
         const left  = this.cursors.left.isDown  || this.touch.left;
@@ -1099,7 +1167,7 @@ class PlayScene extends Phaser.Scene {
 
         if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
 
-        this.robots.children.entries.forEach(r => { if (r.active && r.x < -100) r.destroy(); });
+        this.robots.children.entries.forEach(r => { if (r.active && (r.x < -100 || r.x > W + 100)) r.destroy(); });
 
         if (this.spawnQueue <= 0 && this.robots.countActive(true) === 0 && !this.waveCleared) {
             this.waveCleared = true;
@@ -1135,7 +1203,40 @@ class PlayScene extends Phaser.Scene {
         this.prevGrounded = grounded;
         // ─────────────────────────────────────────────────────────────────────
 
+        this.animateBelts(delta);
         this.updateUI();
+    }
+
+    // ── BELT ANIMATION ────────────────────────────────────────────────────────
+    animateBelts(delta) {
+        if (!this.beltGfx) return;
+        this.beltOffset = (this.beltOffset + delta * 0.07) % 16;
+        const g = this.beltGfx;
+        g.clear();
+        const stripeColor = this.level === 'factory' ? 0x3a5566 : 0x665040;
+        this.beltDefs.forEach(b => {
+            const lx = b.cx - b.w / 2, rx = b.cx + b.w / 2;
+            const top = b.y - 5, bot = b.y + 5;
+            // Belt surface
+            g.fillStyle(0x18222e, 1);
+            g.fillRect(lx + 1, top, b.w - 2, 10);
+            // Scrolling diagonal stripes
+            g.lineStyle(1, stripeColor, 0.85);
+            const off = b.dir * this.beltOffset;
+            for (let i = -1; i < (b.w / 16) + 2; i++) {
+                const sx = lx + i * 16 + off;
+                const x1 = Math.max(sx, lx + 1), x2 = Math.min(sx + 9, rx - 1);
+                if (x2 > x1) g.lineBetween(x1, top, x2, bot);
+            }
+            // Direction arrow at center
+            g.fillStyle(0x5588aa, 0.8);
+            const ax = b.cx, ay = b.y;
+            if (b.dir > 0) {
+                g.fillTriangle(ax + 9, ay, ax - 3, ay - 5, ax - 3, ay + 5);
+            } else {
+                g.fillTriangle(ax - 9, ay, ax + 3, ay - 5, ax + 3, ay + 5);
+            }
+        });
     }
 
     // ── BASIC STRIKE ─────────────────────────────────────────────────────────
@@ -1179,7 +1280,9 @@ class PlayScene extends Phaser.Scene {
             robot.hp--;
             this.cameras.main.shake(70, 0.005);
             if (robot.hp <= 0) {
-                this.score += robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
+                const pts = robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
+                this.score += pts;
+                this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
                 this.burstEffect(robot.x, robot.y, C.gold);
                 robot.destroy();
             } else {
@@ -1234,7 +1337,9 @@ class PlayScene extends Phaser.Scene {
         this.time.delayedCall(200, () => {
             this.robots.children.entries.forEach(robot => {
                 if (!robot.active) return;
-                this.score += robot.isBoss ? 250 : robot.isAdmin ? 180 : robot.isShielded ? 120 : 80;
+                const pts = robot.isBoss ? 250 : robot.isAdmin ? 180 : robot.isShielded ? 120 : 80;
+                this.score += pts;
+                this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
                 this.burstEffect(robot.x, robot.y, C.gold);
                 robot.destroy();
             });
@@ -1314,7 +1419,9 @@ class PlayScene extends Phaser.Scene {
             this.robots.children.entries.forEach(robot => {
                 if (!robot.active) return;
                 if (robot.isShielded || robot.isBoss || robot.isAdmin) {
-                    this.score += robot.isBoss ? 280 : robot.isAdmin ? 200 : 130;
+                    const pts = robot.isBoss ? 280 : robot.isAdmin ? 200 : 130;
+                    this.score += pts;
+                    this.showPopup(robot.x, robot.y - 40, '+' + pts, C.tealS);
                     this.burstEffect(robot.x, robot.y, C.teal);
                     robot.destroy();
                 } else {
