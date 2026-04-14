@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DogStrike game — S3 + CloudFront + ACM + Route 53 (dogsonstrike.com)
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: dogsonstrike.com
+  HostedZoneId:
+    Type: String
+    Default: Z040195020TV0XNOG8O41
+
+Resources:
+
+  # ── KMS key for S3 encryption at rest ────────────────────────────────────────
+  KmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: dogsonstrike S3 bucket encryption key
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowAccountRoot
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: '*'
+            Condition:
+              StringLike:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/*'
+
+  KmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/dogsonstrike-s3
+      TargetKeyId: !Ref KmsKey
+
+  # ── S3 bucket — private, CloudFront OAC access only ──────────────────────────
+  GameBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref KmsKey
+            BucketKeyEnabled: true   # reduces KMS API calls
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  GameBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref GameBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${GameBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # ── ACM certificate — DNS-validated, covers apex + www ───────────────────────
+  # NOTE: Stack must be deployed in us-east-1 (CloudFront requirement)
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub 'www.${DomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: !Sub 'www.${DomainName}'
+          HostedZoneId: !Ref HostedZoneId
+
+  # ── CloudFront Origin Access Control (OAC) ───────────────────────────────────
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${DomainName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ── CloudFront distribution ───────────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref DomainName
+          - !Sub 'www.${DomainName}'
+        Comment: !Sub '${DomainName} static game'
+        DefaultRootObject: dogstrike.html
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100   # North America + Europe (lowest cost tier)
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Certificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt GameBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''   # required empty string when using OAC
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # AWS managed: CachingOptimized
+          Compress: true
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+        CustomErrorResponses:
+          # S3 returns 403 for missing objects when bucket is private; map to index
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /dogstrike.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /dogstrike.html
+            ErrorCachingMinTTL: 10
+
+  # ── Route 53 — apex + www, IPv4 + IPv6 ───────────────────────────────────────
+  DnsRecords:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      RecordSets:
+        - Name: !Ref DomainName
+          Type: A
+          AliasTarget:
+            DNSName: !GetAtt CloudFrontDistribution.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2   # CloudFront's fixed hosted zone ID
+            EvaluateTargetHealth: false
+        - Name: !Ref DomainName
+          Type: AAAA
+          AliasTarget:
+            DNSName: !GetAtt CloudFrontDistribution.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2
+            EvaluateTargetHealth: false
+        - Name: !Sub 'www.${DomainName}'
+          Type: A
+          AliasTarget:
+            DNSName: !GetAtt CloudFrontDistribution.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2
+            EvaluateTargetHealth: false
+        - Name: !Sub 'www.${DomainName}'
+          Type: AAAA
+          AliasTarget:
+            DNSName: !GetAtt CloudFrontDistribution.DomainName
+            HostedZoneId: Z2FDTNDATAQYW2
+            EvaluateTargetHealth: false
+
+Outputs:
+  BucketName:
+    Description: S3 bucket name
+    Value: !Ref GameBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  DistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AWS::StackName}-DistributionId'
+
+  DistributionDomain:
+    Description: CloudFront domain (before DNS propagates)
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-DistributionDomain'
+
+  GameUrl:
+    Description: Live game URL
+    Value: !Sub 'https://${DomainName}'
