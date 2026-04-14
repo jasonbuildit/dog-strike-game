@@ -114,6 +114,67 @@ const C = {
     dark:    0x0d0810,
 };
 
+// ─── PROCEDURAL SFX ──────────────────────────────────────────────────────────
+const SFX = (() => {
+    let _ctx = null;
+    const ctx = () => {
+        if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_ctx.state === 'suspended') _ctx.resume();
+        return _ctx;
+    };
+    const osc = (freq, type, vol, dur, freqEnd) => {
+        const c = ctx(), o = c.createOscillator(), g = c.createGain();
+        o.connect(g); g.connect(c.destination);
+        o.type = type; o.frequency.setValueAtTime(freq, c.currentTime);
+        if (freqEnd !== undefined) o.frequency.exponentialRampToValueAtTime(freqEnd, c.currentTime + dur);
+        g.gain.setValueAtTime(vol, c.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+        o.start(); o.stop(c.currentTime + dur);
+    };
+    const burst = (vol, dur, cutoff) => {
+        const c = ctx();
+        const buf = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const src = c.createBufferSource(), flt = c.createBiquadFilter(), g = c.createGain();
+        src.buffer = buf; flt.type = 'lowpass'; flt.frequency.value = cutoff || 1000;
+        src.connect(flt); flt.connect(g); g.connect(c.destination);
+        g.gain.setValueAtTime(vol, c.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+        src.start();
+    };
+    return {
+        strike()  { osc(240, 'square',   0.35, 0.09, 80);  burst(0.18, 0.1,  500); },
+        miss()    { osc(180, 'sine',     0.18, 0.14, 110); },
+        shield()  { osc(900, 'square',   0.18, 0.06, 1400); },
+        hit()     { burst(0.28, 0.12, 700); osc(110, 'square', 0.26, 0.11, 55); },
+        hurt()    { osc(190, 'square',   0.32, 0.16, 75);  burst(0.22, 0.16, 600); },
+        destroy(boss) {
+            burst(boss ? 0.50 : 0.38, boss ? 0.38 : 0.22, boss ? 280 : 700);
+            osc(boss ? 75 : 130, 'sawtooth', 0.38, boss ? 0.32 : 0.18, boss ? 28 : 55);
+        },
+        jump()  { osc(320, 'sine', 0.14, 0.14, 540); },
+        land()  { burst(0.14, 0.07, 600); },
+        power(id) {
+            if (id === 'saint') {
+                [0,80,160,240,320].forEach((t,i) => setTimeout(() => osc(220+i*70,'sine',0.26,0.22), t));
+                burst(0.2, 0.45, 1400);
+            } else if (id === 'shepherd') {
+                osc(280, 'sawtooth', 0.32, 0.32, 75); burst(0.24, 0.3, 1000);
+            } else {
+                [0,55,110,165].forEach((t,i) => setTimeout(() => osc(820-i*110,'square',0.16,0.11), t));
+            }
+        },
+        waveClear() { [261,329,392,523].forEach((n,i) => setTimeout(() => osc(n,'sine',0.28,0.32), i*110)); },
+        gameOver()  { [392,330,261,196].forEach((n,i) => setTimeout(() => osc(n,'sawtooth',0.24,0.36), i*170)); },
+    };
+})();
+
+// ─── HIGH SCORE ───────────────────────────────────────────────────────────────
+const HS_KEY = 'dogstrike_hs';
+function getHS()   { return parseInt(localStorage.getItem(HS_KEY) || '0', 10); }
+function saveHS(s) { if (s > getHS()) localStorage.setItem(HS_KEY, String(s)); }
+
 // ─── HERO DEFINITIONS ────────────────────────────────────────────────────────
 const HEROES = {
     saint: {
@@ -510,6 +571,9 @@ class TitleScene extends Phaser.Scene {
             fontSize: '14px', fill: C.goldS, letterSpacing: 3
         }).setOrigin(0.5);
         this.tweens.add({ targets: prompt, alpha: 0.2, duration: 950, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+
+        const hs = getHS();
+        if (hs > 0) this.add.text(W / 2, H / 2 + 66, 'BEST: ' + hs, { fontSize: '13px', fill: C.tealS, letterSpacing: 4 }).setOrigin(0.5);
 
         this.add.text(W / 2, H - 24, 'v0.3  |  DOGSONSTRIKE.COM', {
             fontSize: '10px', fill: '#4a3a1a', letterSpacing: 2
@@ -1153,7 +1217,21 @@ class PlayScene extends Phaser.Scene {
         // Keep aura tracking the player feet
         this.heroAura.setPosition(this.player.x, this.player.y + 38);
 
-        if ((this.cursors.up.isDown || this.touch.up) && this.player.body.blocked.down) this.player.setVelocityY(-440);
+        // Belt push — slide player sideways while standing on a conveyor
+        if (this.player.body.blocked.down && this.player.body.bottom < GROUND_Y - 40) {
+            for (const b of this.beltDefs) {
+                const lx = b.cx - b.w / 2, rx = b.cx + b.w / 2;
+                if (this.player.x > lx && this.player.x < rx) {
+                    this.player.body.velocity.x += b.dir * 85;
+                    break;
+                }
+            }
+        }
+
+        if ((this.cursors.up.isDown || this.touch.up) && this.player.body.blocked.down) {
+            this.player.setVelocityY(-440);
+            SFX.jump();
+        }
 
         if (this.strikeCD > 0) this.strikeCD--;
         if ((Phaser.Input.Keyboard.JustDown(this.strikeKey) || this.touch.strikeFired) && this.strikeCD === 0) {
@@ -1170,6 +1248,30 @@ class PlayScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
 
         this.robots.children.entries.forEach(r => { if (r.active && (r.x < -100 || r.x > W + 100)) r.destroy(); });
+
+        // Robot AI: belt push + occasional platform jump
+        this.robots.children.entries.forEach(r => {
+            if (!r.active) return;
+            if (r.body.blocked.down) {
+                // Apply belt velocity when standing on a conveyor
+                if (r.body.bottom < GROUND_Y - 40) {
+                    for (const b of this.beltDefs) {
+                        const lx = b.cx - b.w / 2, rx = b.cx + b.w / 2;
+                        if (r.x > lx && r.x < rx) { r.body.velocity.x += b.dir * 60; break; }
+                    }
+                }
+                // Jump toward player when player is elevated or robot is near a belt column
+                if (!r.isBoss) {
+                    if (!r._jumpCD) r._jumpCD = Phaser.Math.Between(120, 280);
+                    if (--r._jumpCD <= 0) {
+                        r._jumpCD = Phaser.Math.Between(120, 280);
+                        const playerHigh = this.player.y < GROUND_Y - 60;
+                        const nearBelt = this.beltDefs.some(b => Math.abs(r.x - b.cx) < b.w * 0.55);
+                        if (playerHigh || nearBelt) r.setVelocityY(-400);
+                    }
+                }
+            }
+        });
 
         if (this.spawnQueue <= 0 && this.robots.countActive(true) === 0 && !this.waveCleared) {
             this.waveCleared = true;
@@ -1244,6 +1346,7 @@ class PlayScene extends Phaser.Scene {
     // ── BASIC STRIKE ─────────────────────────────────────────────────────────
     performStrike() {
         this.strikeCD = this.hero.strikeCD;
+        SFX.strike();
         const px = this.player.x, py = this.player.y;
 
         // Show strike pose frame, then resume movement animation
@@ -1277,6 +1380,7 @@ class PlayScene extends Phaser.Scene {
             if (robot.isShielded && this.hero.id !== 'dachshund') {
                 this.showPopup(robot.x, robot.y - 30, 'SHIELDED', C.tealS);
                 this.cameras.main.shake(40, 0.003);
+                SFX.shield();
                 return;
             }
             robot.hp--;
@@ -1286,14 +1390,17 @@ class PlayScene extends Phaser.Scene {
                 this.score += pts;
                 this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
                 this.burstEffect(robot.x, robot.y, C.gold);
+                SFX.destroy(robot.isBoss);
                 robot.destroy();
             } else {
                 robot.setTint(0xff4444);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
+                SFX.hit();
             }
             hit = true;
         });
 
+        if (!hit) SFX.miss();
         this.showPopup(px, py - 50, hit ? 'STRIKE!' : 'MISS', hit ? C.goldS : C.orangeS);
     }
 
@@ -1306,6 +1413,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     powerUnityHowl() {
+        SFX.power('saint');
         this.player.anims.play('saint_special', true);
         this.time.delayedCall(500, () => {
             if (!this.waveCleared && !this.gameOver) this.player.anims.play('saint_idle', true);
@@ -1343,12 +1451,14 @@ class PlayScene extends Phaser.Scene {
                 this.score += pts;
                 this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
                 this.burstEffect(robot.x, robot.y, C.gold);
+                SFX.destroy(robot.isBoss);
                 robot.destroy();
             });
         });
     }
 
     powerAuthorityBark() {
+        SFX.power('shepherd');
         this.player.anims.play('shepherd_special', true);
         this.time.delayedCall(500, () => {
             if (!this.waveCleared && !this.gameOver) this.player.anims.play('shepherd_idle', true);
@@ -1395,6 +1505,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     powerTechSabotage() {
+        SFX.power('dachshund');
         this.player.anims.play('dachshund_special', true);
         this.time.delayedCall(500, () => {
             if (!this.waveCleared && !this.gameOver) this.player.anims.play('dachshund_idle', true);
@@ -1425,6 +1536,7 @@ class PlayScene extends Phaser.Scene {
                     this.score += pts;
                     this.showPopup(robot.x, robot.y - 40, '+' + pts, C.tealS);
                     this.burstEffect(robot.x, robot.y, C.teal);
+                    SFX.destroy(robot.isBoss);
                     robot.destroy();
                 } else {
                     robot.clearTint();
@@ -1487,6 +1599,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     playLandAnim() {
+        SFX.land();
         this.tweens.add({
             targets: this.player,
             angle: 0, scaleX: this.player._bsx * 1.32, scaleY: this.player._bsy * 0.70,
@@ -1543,6 +1656,7 @@ class PlayScene extends Phaser.Scene {
         if (!robot.active) return;
         const dmg = robot.isBoss ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
         this.unionPct -= dmg;
+        SFX.hurt();
         this.cameras.main.shake(110, 0.012);
         this.showPopup(player.x, player.y - 30, '-' + dmg + '%', C.crimsonS);
         robot.destroy();
@@ -1556,6 +1670,8 @@ class PlayScene extends Phaser.Scene {
     showWaveCleared() {
         const bonus = Math.floor(this.unionPct / 10) * 50;
         this.score += bonus;
+        SFX.waveClear();
+        saveHS(this.score);
         const nextWave = this.wave + 1;
 
         this.add.rectangle(W / 2, H / 2, 460, 230, C.dark, 0.93).setDepth(20).setStrokeStyle(1, C.gold);
@@ -1582,12 +1698,20 @@ class PlayScene extends Phaser.Scene {
     }
 
     showGameOver() {
-        this.add.rectangle(W / 2, H / 2, 460, 250, C.dark, 0.94).setDepth(20).setStrokeStyle(1, C.crimson);
-        this.add.text(W / 2, H / 2 - 85, '— UNION BROKEN —',          { fontSize: '26px', fill: C.crimsonS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
-        this.add.text(W / 2, H / 2 - 38, 'Fell on Wave ' + this.wave,  { fontSize: '18px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
-        this.add.text(W / 2, H / 2 + 4,  'Final Score: ' + this.score, { fontSize: '22px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
-        this.add.text(W / 2, H / 2 + 76, 'TAP  or  R → Hero Select',   { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
-        this.input.once('pointerdown', () => this.scene.start('HeroSelectScene', { wave: 1, score: 0 }));
+        SFX.gameOver();
+        const prevBest = getHS();
+        const isNewHS  = this.score > prevBest;
+        saveHS(this.score);
+        const displayHS = isNewHS ? this.score : prevBest;
+        this.add.rectangle(W / 2, H / 2, 460, 270, C.dark, 0.94).setDepth(20).setStrokeStyle(1, C.crimson);
+        this.add.text(W / 2, H / 2 - 95, '— UNION BROKEN —',          { fontSize: '26px', fill: C.crimsonS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 - 48, 'Fell on Wave ' + this.wave,  { fontSize: '18px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 0,  'Final Score: ' + this.score, { fontSize: '22px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 32, isNewHS ? '★  NEW BEST  ★' : 'Best: ' + displayHS, { fontSize: '13px', fill: isNewHS ? C.goldS : C.tealS }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 + 90, 'TAP  or  R → Hero Select',   { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
+        const restart = () => this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        this.input.once('pointerdown', restart);
+        this.input.keyboard.once('keydown-R', restart);
     }
 
     // ── TOUCH CONTROLS ───────────────────────────────────────────────────────
