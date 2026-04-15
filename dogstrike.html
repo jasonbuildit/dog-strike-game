@@ -85,6 +85,41 @@
             #game-container { visibility: hidden; }
             #controls-hint  { display: none; }
         }
+
+        /* ── Loading splash screen ── */
+        #loading-screen {
+            position: fixed; inset: 0;
+            background: #1a0f1a;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 2000;
+            transition: opacity 0.5s ease;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #loading-screen.fade-out { opacity: 0; pointer-events: none; }
+        #loading-inner {
+            display: flex; flex-direction: column; align-items: center; gap: 14px;
+            border: 2px solid #d4af37;
+            padding: 40px 60px;
+            text-align: center;
+            color: #d4af37;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+        #loading-title { font-size: 36px; font-weight: bold; }
+        #loading-sub   { font-size: 11px; color: #f4e4bc; letter-spacing: 6px; }
+        #loading-bar-wrap {
+            width: 200px; height: 6px;
+            background: #2e1a2d;
+            border: 1px solid #d4af37;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        #loading-bar {
+            width: 0%; height: 100%;
+            background: #d4af37;
+            transition: width 0.15s ease;
+        }
+        #loading-text { font-size: 12px; letter-spacing: 3px; }
     </style>
 </head>
 <body>
@@ -93,6 +128,14 @@
         <div id="rotate-inner"><span>Rotate to landscape</span></div>
     </div>
     <div id="controls-hint">← → Move &nbsp;|&nbsp; ↑ Jump &nbsp;|&nbsp; SPACE Strike &nbsp;|&nbsp; X Special Power &nbsp;|&nbsp; R Restart</div>
+    <div id="loading-screen">
+        <div id="loading-inner">
+            <div id="loading-title">DOGSTRIKE</div>
+            <div id="loading-sub">UNION STRONG</div>
+            <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+            <div id="loading-text">LOADING<span id="loading-dots"></span></div>
+        </div>
+    </div>
 
 <script>
 /**
@@ -259,15 +302,19 @@ function _rrPath(ctx, x, y, w, h, r) {
 function _dogPose(f) {
     // bodyLean: body rotation (radians)  bLX/fLX: back/front leg center X offset from cx
     // bRot/fRot: leg rotation  headY: vertical head offset  strike: extend punch arm
+    // tailAng: tail arc angle (swings with gait)
     const p = [
         { bodyLean: 0,     bLX: -5,  fLX:  5, headY:  0, bRot:  0,    fRot:  0    }, // 0 idle A
         { bodyLean: 0,     bLX: -5,  fLX:  5, headY: -1, bRot:  0,    fRot:  0    }, // 1 idle B
-        { bodyLean: 0.07,  bLX: -9,  fLX: 10, headY:  1, bRot: -0.28, fRot:  0.22 }, // 2 walk A
-        { bodyLean: 0,     bLX: -4,  fLX:  4, headY:  0, bRot:  0,    fRot:  0    }, // 3 walk B
-        { bodyLean:-0.07,  bLX: 10,  fLX: -9, headY:  1, bRot:  0.22, fRot: -0.28 }, // 4 walk C
-        { bodyLean: 0,     bLX: -4,  fLX:  4, headY:  0, bRot:  0,    fRot:  0    }, // 5 walk D
-        { bodyLean: 0,     bLX: -4,  fLX:  4, headY: -4, bRot: -0.55, fRot: -0.55 }, // 6 jump
-        { bodyLean:-0.18,  bLX: -8,  fLX: 12, headY:  0, bRot: -0.1,  fRot:  0.15, strike: true }, // 7 strike
+        { bodyLean:  0.12, bLX:-10,  fLX: 12, headY:  2, bRot:-0.42,  fRot: 0.36, tailAng:-0.25 }, // 2 run A — left diagonal
+        { bodyLean:  0.02, bLX: -3,  fLX:  3, headY: -1, bRot:-0.10,  fRot: 0.08, tailAng: 0.08 }, // 3 run B — gather
+        { bodyLean: -0.12, bLX: 10,  fLX:-12, headY:  2, bRot: 0.36,  fRot:-0.42, tailAng: 0.25 }, // 4 run C — right diagonal
+        { bodyLean: -0.02, bLX: -3,  fLX:  3, headY: -1, bRot: 0.08,  fRot:-0.10, tailAng:-0.08 }, // 5 run D — gather
+        { bodyLean:  0,    bLX: -4,  fLX:  4, headY: -5, bRot:-0.60,  fRot:-0.60, tailAng: 0.35 }, // 6 jump — aerial tuck
+        { bodyLean:-0.18,  bLX: -8,  fLX: 12, headY:  0, bRot:-0.1,   fRot:  0.15, strike: true  }, // 7 strike
+        { bodyLean:-0.08,  bLX: -6,  fLX:  6, headY: -4, bRot: 0.12,  fRot: 0.12, tailAng:-0.35 }, // 8 special A — windup
+        { bodyLean:-0.22,  bLX:-10,  fLX: 14, headY: -2, bRot: 0.15,  fRot:-0.20, tailAng:-0.45, strike: true }, // 9 special B — peak
+        { bodyLean: 0.05,  bLX: -5,  fLX:  5, headY:  1, bRot:-0.10,  fRot:-0.10, tailAng: 0.10 }, // 10 special C — release
     ];
     return p[Math.min(f, p.length - 1)];
 }
@@ -344,12 +391,17 @@ function _drawDogFrame(ctx, ox, oy, fw, fh, cfg, frameIdx) {
     ctx.beginPath(); ctx.ellipse(0, LH, LW * 0.75, 3.5, 0, 0, Math.PI * 2);
     ctx.fillStyle = cfg.dc; ctx.fill(); ctx.restore();
 
-    // Tail (quadratic curve off the back of the body)
+    // Tail (quadratic curve off the back of the body, angle driven by pose.tailAng)
     ctx.save(); ctx.strokeStyle = cfg.pc; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    const tRootX = cx + BW * 0.42;
+    const tRootY = bodyTopY + BH * 0.35;
+    const tAng   = pose.tailAng || 0;
     ctx.beginPath();
-    ctx.moveTo(cx + BW * 0.42, bodyTopY + BH * 0.35);
-    ctx.quadraticCurveTo(cx + BW * 0.42 + 11, bodyTopY + BH * 0.35 - 14,
-                         cx + BW * 0.42 + 7,  bodyTopY + BH * 0.35 - 26);
+    ctx.moveTo(tRootX, tRootY);
+    ctx.quadraticCurveTo(
+        tRootX + Math.sin(tAng) * 11, tRootY - 14,
+        tRootX + Math.sin(tAng) * 7 + 7, tRootY - 26
+    );
     ctx.stroke(); ctx.restore();
 
     // Body
@@ -401,8 +453,8 @@ function _drawDogFrame(ctx, ox, oy, fw, fh, cfg, frameIdx) {
 }
 
 function createHeroSpritesheets(scene) {
-    // Frame dimensions match the AI-generated sheets (128×160 @ 2x, 11 frames).
-    // Frames 0-7: same poses as before. Frames 8-10: special power windup/peak/release.
+    // Frame dimensions match the AI-generated sheets (128×160 per frame, 11 frames).
+    // 0-1: idle  2-5: run  6: jump  7: strike  8-10: special
     const FW = 128, FH = 160, NF = 11;
     const CFGS = [
         { id: 'saint',     key: 'hero_saint_sheet',
@@ -439,10 +491,11 @@ function createHeroAnimations(scene) {
             if (scene.anims.exists(id + '_' + a)) scene.anims.remove(id + '_' + a);
         });
         scene.anims.create({ key: id + '_idle',
-            frames: [{ key, frame: 0 }, { key, frame: 1 }], frameRate: 2,  repeat: -1 });
+            frames: [{ key, frame: 0 }, { key, frame: 1 }], frameRate: 2, repeat: -1 });
+        // 4-frame run cycle; improved poses in Canvas 2D fallback, AI PNGs use their own art
         scene.anims.create({ key: id + '_walk',
             frames: [{ key, frame: 2 }, { key, frame: 3 }, { key, frame: 4 }, { key, frame: 5 }],
-            frameRate: 10, repeat: -1 });
+            frameRate: 12, repeat: -1 });
         scene.anims.create({ key: id + '_jump',
             frames: [{ key, frame: 6 }], frameRate: 1, repeat: 0 });
         scene.anims.create({ key: id + '_strike',
@@ -460,6 +513,10 @@ class BootScene extends Phaser.Scene {
 
     preload() {
         this.failedKeys = new Set();
+        this.load.on('progress', (v) => {
+            const bar = document.getElementById('loading-bar');
+            if (bar) bar.style.width = Math.round(v * 100) + '%';
+        });
         this.assetDefs = [
             { key: 'hero_saint',          path: './assets/dogs/hero_saint_body.png',       w: 60,  h: 80,  color: 0xe8c45a },
             { key: 'hero_shepherd',       path: './assets/dogs/hero_shepherd_body.png',    w: 60,  h: 80,  color: 0x8b9e6c },
@@ -516,6 +573,14 @@ class BootScene extends Phaser.Scene {
     }
 
     create() {
+        // Dismiss loading overlay
+        const ls = document.getElementById('loading-screen');
+        if (ls) {
+            ls.classList.add('fade-out');
+            setTimeout(() => { if (ls.parentNode) ls.parentNode.removeChild(ls); }, 550);
+        }
+        clearInterval(window._loadingDotsInterval);
+
         this.assetDefs.forEach(d => {
             if (!d.path || this.failedKeys.has(d.key)) {
                 if (!this.textures.exists(d.key)) this.makeRect(d.key, d.w, d.h, d.color);
@@ -568,7 +633,9 @@ class TitleScene extends Phaser.Scene {
             fontSize: '11px', fill: C.goldS, letterSpacing: 5
         }).setOrigin(0.5);
 
-        const prompt = this.add.text(W / 2, H / 2 + 100, 'PRESS SPACE TO BEGIN', {
+        const isMobile = this.sys.game.device.input.touch;
+        const promptText = isMobile ? 'TAP TO BEGIN' : 'PRESS SPACE TO BEGIN';
+        const prompt = this.add.text(W / 2, H / 2 + 100, promptText, {
             fontSize: '14px', fill: C.goldS, letterSpacing: 3
         }).setOrigin(0.5);
         this.tweens.add({ targets: prompt, alpha: 0.2, duration: 950, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
@@ -1053,6 +1120,7 @@ class PlayScene extends Phaser.Scene {
         this.strikeKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.powerKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
         this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+        this.peeKey     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
 
         this.touch = { left: false, right: false, up: false, strikeFired: false, powerFired: false };
         this.createTouchButtons();
@@ -1064,6 +1132,7 @@ class PlayScene extends Phaser.Scene {
         this.walkPhase    = 0;
         this.walkTimer    = null;
         this.prevGrounded = true;
+        this.peeTimer     = null;
         this.player.anims.play(this.hero.id + '_idle', true);
     }
 
@@ -1211,9 +1280,11 @@ class PlayScene extends Phaser.Scene {
 
         const left  = this.cursors.left.isDown  || this.touch.left;
         const right = this.cursors.right.isDown || this.touch.right;
-        if (left)       { this.player.setVelocityX(-this.hero.speed); this.player.setFlipX(true); }
-        else if (right) { this.player.setVelocityX(this.hero.speed);  this.player.setFlipX(false); }
-        else            { this.player.setVelocityX(0); }
+        if (this.animState !== 'pee') {
+            if (left)       { this.player.setVelocityX(-this.hero.speed); this.player.setFlipX(true); }
+            else if (right) { this.player.setVelocityX(this.hero.speed);  this.player.setFlipX(false); }
+            else            { this.player.setVelocityX(0); }
+        }
 
         // Keep aura tracking the player feet
         this.heroAura.setPosition(this.player.x, this.player.y + 38);
@@ -1247,6 +1318,13 @@ class PlayScene extends Phaser.Scene {
         }
 
         if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+
+        if (Phaser.Input.Keyboard.JustDown(this.peeKey)
+            && this.animState === 'idle'
+            && this.player.body.blocked.down
+            && !this.waveCleared && !this.gameOver) {
+            this.startPeeAnim();
+        }
 
         this.robots.children.entries.forEach(r => { if (r.active && (r.x < -100 || r.x > W + 100)) r.destroy(); });
 
@@ -1283,26 +1361,28 @@ class PlayScene extends Phaser.Scene {
         const grounded = this.player.body.blocked.down;
         const moving   = Math.abs(this.player.body.velocity.x) > 20;
 
-        if (!grounded && this.prevGrounded) {
-            // Just left the ground — jump stretch
-            this.animState = 'jump';
-            this.stopIdleAnim();
-            this.stopWalkAnim();
-            this.playJumpAnim();
-        } else if (grounded && !this.prevGrounded) {
-            // Just landed — squash then restore
-            this.playLandAnim();
-            if (moving) { this.animState = 'walk'; this.startWalkAnim(); }
-            else          this.animState = 'idle';
-        } else if (grounded) {
-            if (moving && this.animState !== 'walk') {
-                this.animState = 'walk';
+        if (this.animState !== 'pee') {
+            if (!grounded && this.prevGrounded) {
+                // Just left the ground — jump stretch
+                this.animState = 'jump';
                 this.stopIdleAnim();
-                this.startWalkAnim();
-            } else if (!moving && this.animState !== 'idle') {
-                this.animState = 'idle';
                 this.stopWalkAnim();
-                this.startIdleAnim();
+                this.playJumpAnim();
+            } else if (grounded && !this.prevGrounded) {
+                // Just landed — squash then restore
+                this.playLandAnim();
+                if (moving) { this.animState = 'walk'; this.startWalkAnim(); }
+                else          this.animState = 'idle';
+            } else if (grounded) {
+                if (moving && this.animState !== 'walk') {
+                    this.animState = 'walk';
+                    this.stopIdleAnim();
+                    this.startWalkAnim();
+                } else if (!moving && this.animState !== 'idle') {
+                    this.animState = 'idle';
+                    this.stopWalkAnim();
+                    this.startIdleAnim();
+                }
             }
         }
         this.prevGrounded = grounded;
@@ -1644,6 +1724,91 @@ class PlayScene extends Phaser.Scene {
         this.tweens.add({ targets: this.player, angle: 0, duration: 80 });
     }
 
+    startPeeAnim() {
+        if (this.animState === 'pee') return;
+        if (!this.player.body.blocked.down) return;
+        this.animState = 'pee';
+        this.stopWalkAnim();
+        this.player.setVelocityX(0);
+        // Freeze on idle frame so body stays still
+        this.player.anims.play(this.hero.id + '_idle', true);
+        this.player.anims.pause();
+
+        // Draw a raised back leg as a Graphics overlay
+        this._peeLegs = this.add.graphics().setDepth(this.player.depth + 1);
+        this._updatePeeLegGfx();
+
+        // Stream starts ~300ms in (mid-hold)
+        this.time.delayedCall(300, () => {
+            if (this.animState === 'pee') this._spawnPeeStream();
+        });
+        // End animation after ~1.1s
+        this.time.delayedCall(1100, () => {
+            if (this._peeLegs) { this._peeLegs.destroy(); this._peeLegs = null; }
+            if (!this.waveCleared && !this.gameOver) {
+                this.animState = 'idle';
+                this.player.anims.resume();
+                this.startIdleAnim();
+            }
+            this._spawnPeeFinishDots();
+        });
+    }
+
+    _updatePeeLegGfx() {
+        if (!this._peeLegs) return;
+        const g   = this._peeLegs;
+        g.clear();
+        // dir: +1 = facing right (back of dog is on the left), -1 = facing left
+        const dir = this.player.flipX ? -1 : 1;
+        // Hip root is behind the dog body (negative X when facing right)
+        const hipX  = this.player.x - dir * 12;
+        const hipY  = this.player.y + 8;
+        const kneeX = hipX + dir * 14;   // knee: forward and upward
+        const kneeY = hipY - 18;
+        const pawX  = hipX + dir * 22;   // paw: further forward, slightly down
+        const pawY  = hipY - 10;
+        g.lineStyle(8, this.hero.color, 0.88);
+        g.beginPath();
+        g.moveTo(hipX, hipY);
+        g.lineTo(kneeX, kneeY);
+        g.lineTo(pawX, pawY);
+        g.strokePath();
+        g.fillStyle(this.hero.color, 0.8);
+        g.fillCircle(pawX, pawY, 5);     // paw
+    }
+
+    _spawnPeeStream() {
+        const dir = this.player.flipX ? 1 : -1;
+        const px = this.player.x + dir * 18;
+        const py = this.player.y + 10;
+        for (let i = 0; i < 6; i++) {
+            this.time.delayedCall(i * 55, () => {
+                if (this.animState !== 'pee') return;
+                const dot = this.add.circle(
+                    px + Phaser.Math.Between(-3, 3), py, 2.5, C.gold, 0.7
+                ).setDepth(3);
+                this.tweens.add({
+                    targets: dot,
+                    x: dot.x + Phaser.Math.Between(-5, 5),
+                    y: dot.y + 30,
+                    alpha: 0, duration: 260, ease: 'Quad.In',
+                    onComplete: () => dot.destroy(),
+                });
+            });
+        }
+    }
+
+    _spawnPeeFinishDots() {
+        const px = this.player.x, py = GROUND_Y - 2;
+        for (let i = 0; i < 4; i++) {
+            const d = this.add.circle(px + Phaser.Math.Between(-8, 8), py, 2, C.gold, 0.5).setDepth(3);
+            this.tweens.add({
+                targets: d, y: py - 5, alpha: 0, duration: 180, ease: 'Quad.Out',
+                onComplete: () => d.destroy(),
+            });
+        }
+    }
+
     playJumpAnim() {
         this.player.anims.play(this.hero.id + '_jump', true);
         this.tweens.add({
@@ -1871,8 +2036,9 @@ class PlayScene extends Phaser.Scene {
     // ── TOUCH CONTROLS ───────────────────────────────────────────────────────
     createTouchButtons() {
         const scaleFactor = this.scale.displayScale.x;
-        const r = Math.max(28, Math.ceil(22 / scaleFactor));
-        const y = H - 35;
+        // Aim for ~44px physical touch target; clamp to minimum 24 game units to avoid overlap
+        const r = Math.max(24, Math.round(44 / (2 * scaleFactor)));
+        const y = H - 38;
         const makeBtn = (x, label, onDown, onUp) => {
             const g = this.add.graphics().setDepth(50).setScrollFactor(0);
             this.add.text(x, y, label, { fontSize: '20px', fill: '#ffffff', fontStyle: 'bold' })
@@ -1891,11 +2057,11 @@ class PlayScene extends Phaser.Scene {
             zone.on('pointerout',    () => { draw(false); onUp();   });
             zone.on('pointercancel', () => { draw(false); onUp();   });
         };
-        makeBtn(48,  '←', () => { this.touch.left  = true;  }, () => { this.touch.left  = false; });
-        makeBtn(118, '→', () => { this.touch.right = true;  }, () => { this.touch.right = false; });
-        makeBtn(652, '↑', () => { this.touch.up    = true;  }, () => { this.touch.up    = false; });
-        makeBtn(722, '⚡', () => { this.touch.strikeFired = true; }, () => {});
-        makeBtn(786, '★', () => { this.touch.powerFired  = true; }, () => {});
+        makeBtn(54,  '←', () => { this.touch.left  = true;  }, () => { this.touch.left  = false; });
+        makeBtn(130, '→', () => { this.touch.right = true;  }, () => { this.touch.right = false; });
+        makeBtn(628, '↑', () => { this.touch.up    = true;  }, () => { this.touch.up    = false; });
+        makeBtn(702, '⚡', () => { this.touch.strikeFired = true; }, () => {});
+        makeBtn(766, '★', () => { this.touch.powerFired  = true; }, () => {});
     }
 
     // ── CITY HALL BACKGROUND ─────────────────────────────────────────────────
@@ -1984,6 +2150,18 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
+// ── LOADING SCREEN DOTS ANIMATION ────────────────────────────────────────────
+(function() {
+    let dotCount = 0;
+    const dots = document.getElementById('loading-dots');
+    if (!dots) return;
+    const iv = setInterval(() => {
+        dotCount = (dotCount + 1) % 4;
+        dots.textContent = '.'.repeat(dotCount);
+    }, 400);
+    window._loadingDotsInterval = iv;
+})();
 </script>
 </body>
 </html>
