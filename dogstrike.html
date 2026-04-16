@@ -26,6 +26,11 @@
             overflow: hidden;
             touch-action: none;
             font-family: 'Courier New', Courier, monospace;
+            /* Safe area for iPhone notch + home indicator */
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
         }
         #game-container {
             border: 3px solid #d4af37;
@@ -143,9 +148,9 @@
  * 1930s Art Deco | Canine Union vs. Industrial Robots
  */
 
-const W = 800;
-const H = 600;
-const GROUND_Y = 520;
+const W = 960;
+const H = 540;
+const GROUND_Y = 468;
 
 const C = {
     gold:    0xd4af37,  goldS:    '#d4af37',
@@ -1082,7 +1087,7 @@ class PlayScene extends Phaser.Scene {
             this.ground.create(x + 32, GROUND_Y + 16, groundKey);
         }
 
-        this.player = this.physics.add.sprite(120, GROUND_Y - 60, this.hero.sheetKey, 0);
+        this.player = this.physics.add.sprite(144, GROUND_Y - 60, this.hero.sheetKey, 0);
         this.player.setCollideWorldBounds(true);
         this.player.setDisplaySize(60, 80);
         // Store base scales so animation tweens can multiply from the correct baseline
@@ -1090,7 +1095,7 @@ class PlayScene extends Phaser.Scene {
         this.player._bsy = this.player.scaleY;
 
         // Hero aura — colored elliptical glow at feet, pulses with hero color
-        this.heroAura = this.add.ellipse(120, GROUND_Y - 4, 70, 18, this.hero.color, 0).setDepth(0);
+        this.heroAura = this.add.ellipse(144, GROUND_Y - 4, 70, 18, this.hero.color, 0).setDepth(0);
         this.tweens.add({
             targets: this.heroAura,
             alpha: 0.28,
@@ -1140,8 +1145,8 @@ class PlayScene extends Phaser.Scene {
 
     getBeltDefs() {
         return [
-            { cx: 170, y: 370, w: 200, dir:  1 },   // left belt → arrows right
-            { cx: 630, y: 370, w: 200, dir: -1 },   // right belt ← arrows left
+            { cx: 204, y: 333, w: 240, dir:  1 },   // left belt → arrows right
+            { cx: 756, y: 333, w: 240, dir: -1 },   // right belt ← arrows left
         ];
     }
 
@@ -1204,13 +1209,13 @@ class PlayScene extends Phaser.Scene {
             spawnY = belt.y - 70;
             velX   = belt.dir * Math.round(Phaser.Math.Between(42, 65) * speedMult);
         } else if (isBoss) {
-            spawnX = Phaser.Math.Between(710, 790);
+            spawnX = Phaser.Math.Between(852, 948);
             spawnY = GROUND_Y - 70;
             velX   = -28;
         } else {
             // Bidirectional ground spawn (50/50 left or right)
             const fromLeft = Math.random() < 0.5;
-            spawnX = fromLeft ? Phaser.Math.Between(10, 90) : Phaser.Math.Between(710, 790);
+            spawnX = fromLeft ? Phaser.Math.Between(10, 90) : Phaser.Math.Between(852, 948);
             spawnY = GROUND_Y - 50;
             const baseSpeed = isAdmin ? Phaser.Math.Between(60, 90) : Phaser.Math.Between(42, 75);
             velX   = fromLeft
@@ -2057,11 +2062,11 @@ class PlayScene extends Phaser.Scene {
             zone.on('pointerout',    () => { draw(false); onUp();   });
             zone.on('pointercancel', () => { draw(false); onUp();   });
         };
-        makeBtn(54,  '←', () => { this.touch.left  = true;  }, () => { this.touch.left  = false; });
-        makeBtn(130, '→', () => { this.touch.right = true;  }, () => { this.touch.right = false; });
-        makeBtn(628, '↑', () => { this.touch.up    = true;  }, () => { this.touch.up    = false; });
-        makeBtn(702, '⚡', () => { this.touch.strikeFired = true; }, () => {});
-        makeBtn(766, '★', () => { this.touch.powerFired  = true; }, () => {});
+        makeBtn(65,  '←', () => { this.touch.left  = true;  }, () => { this.touch.left  = false; });
+        makeBtn(156, '→', () => { this.touch.right = true;  }, () => { this.touch.right = false; });
+        makeBtn(754, '↑', () => { this.touch.up    = true;  }, () => { this.touch.up    = false; });
+        makeBtn(842, '⚡', () => { this.touch.strikeFired = true; }, () => {});
+        makeBtn(912, '★', () => { this.touch.powerFired  = true; }, () => {});
     }
 
     // ── CITY HALL BACKGROUND ─────────────────────────────────────────────────
@@ -2161,6 +2166,27 @@ const game = new Phaser.Game(config);
         dots.textContent = '.'.repeat(dotCount);
     }, 400);
     window._loadingDotsInterval = iv;
+})();
+
+// ── ORIENTATION GUARD ────────────────────────────────────────────────────────
+(function() {
+    const updateOrientation = () => {
+        const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const isPortrait = window.innerHeight > window.innerWidth;
+        const prompt = document.getElementById('rotate-prompt');
+        const container = document.getElementById('game-container');
+        if (!prompt) return;
+        if (isTouch && isPortrait) {
+            prompt.style.display = 'flex';
+            if (container) container.style.visibility = 'hidden';
+        } else {
+            prompt.style.display = '';
+            if (container) container.style.visibility = '';
+        }
+    };
+    window.addEventListener('orientationchange', updateOrientation);
+    window.addEventListener('resize', updateOrientation);
+    updateOrientation();
 })();
 </script>
 </body>
