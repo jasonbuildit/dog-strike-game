@@ -1202,9 +1202,9 @@ class PlayScene extends Phaser.Scene {
         });
         // Top-only collision: only process when object is moving downward (no side-sticking)
         this.physics.add.collider(this.player, this.conveyors,
-            null, (p) => p.body.velocity.y >= 0, this);
+            null, (p) => p && p.body && p.body.velocity.y >= 0, this);
         this.physics.add.collider(this.robots, this.conveyors,
-            null, (r) => r.body.velocity.y >= 0, this);
+            null, (r) => r && r.body && r.body.velocity.y >= 0, this);
 
         // Static structure — drawn once (support legs + belt frame); depth -1 so belts render behind player
         const sg = this.add.graphics().setDepth(-1);
@@ -1412,7 +1412,10 @@ class PlayScene extends Phaser.Scene {
             this.performSpecialPower();
         }
 
-        if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        if (Phaser.Input.Keyboard.JustDown(this.restartKey)) {
+            if (this.gamePaused) this.physics.resume();
+            this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        }
 
         if (Phaser.Input.Keyboard.JustDown(this.peeKey)
             && this.animState === 'idle'
@@ -1421,7 +1424,7 @@ class PlayScene extends Phaser.Scene {
             this.startPeeAnim();
         }
 
-        this.robots.children.entries.forEach(r => { if (r.active && (r.x < -100 || r.x > W + 100)) r.destroy(); });
+        [...this.robots.children.entries].forEach(r => { if (r && r.active && (r.x < -100 || r.x > W + 100)) r.destroy(); });
 
         // Robot AI: belt push + occasional platform jump
         this.robots.children.entries.forEach(r => {
@@ -2033,7 +2036,7 @@ class PlayScene extends Phaser.Scene {
 
     // ── COLLISION ────────────────────────────────────────────────────────────
     onHit(player, robot) {
-        if (!robot.active) return;
+        if (!robot.active || !robot.body || !player.body) return;
 
         // ── STOMP: player falling from above ──────────────────────────────
         if (player.body.velocity.y > 150 && player.body.bottom <= robot.body.top + 18) {
@@ -2098,7 +2101,14 @@ class PlayScene extends Phaser.Scene {
                         : 'TAP  or  SPACE → Next Wave';
         this.add.text(W / 2, H / 2 + 74, nextLabel, { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
 
+        let advanced = false;
         const advance = () => {
+            if (advanced) return;
+            advanced = true;
+            this.input.keyboard.off('keydown-SPACE', advance);
+            this.input.off('pointerdown', advance);
+            // Always resume physics before leaving so the next scene starts unpaused
+            if (this.gamePaused) this.physics.resume();
             if (nextWave === 4) {
                 this.scene.start('StoryScene', { beatIndex: 0, heroId: this.hero.id, wave: nextWave, score: this.score });
             } else if (nextWave === 7) {
@@ -2123,7 +2133,13 @@ class PlayScene extends Phaser.Scene {
         this.add.text(W / 2, H / 2 + 0,  'Final Score: ' + this.score, { fontSize: '22px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
         this.add.text(W / 2, H / 2 + 32, isNewHS ? '★  NEW BEST  ★' : 'Best: ' + displayHS, { fontSize: '13px', fill: isNewHS ? C.goldS : C.tealS }).setOrigin(0.5).setDepth(21);
         this.add.text(W / 2, H / 2 + 90, 'TAP  or  R → Hero Select',   { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
-        const restart = () => this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        let restarted = false;
+        const restart = () => {
+            if (restarted) return;
+            restarted = true;
+            if (this.gamePaused) this.physics.resume();
+            this.scene.start('HeroSelectScene', { wave: 1, score: 0 });
+        };
         this.input.once('pointerdown', restart);
         this.input.keyboard.once('keydown-R', restart);
     }
