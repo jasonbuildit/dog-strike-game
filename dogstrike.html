@@ -125,10 +125,30 @@
             transition: width 0.15s ease;
         }
         #loading-text { font-size: 12px; letter-spacing: 3px; }
+
+        /* ── Mute button ── */
+        #mute-btn {
+            position: fixed;
+            top: 10px; right: 10px;
+            z-index: 500;
+            background: rgba(26,15,26,0.85);
+            border: 1px solid #d4af37;
+            color: #d4af37;
+            font-size: 16px;
+            width: 34px; height: 34px;
+            cursor: pointer;
+            border-radius: 3px;
+            display: flex; align-items: center; justify-content: center;
+            padding: 0;
+            line-height: 1;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #mute-btn:active { background: rgba(46,26,45,0.95); }
     </style>
 </head>
 <body>
     <div id="game-container"></div>
+    <button id="mute-btn" aria-label="Toggle sound">🔊</button>
     <div id="rotate-prompt">
         <div id="rotate-inner"><span>Rotate to landscape</span></div>
     </div>
@@ -165,13 +185,16 @@ const C = {
 // ─── PROCEDURAL SFX ──────────────────────────────────────────────────────────
 const SFX = (() => {
     let _ctx = null;
+    let _muted = localStorage.getItem('dogstrike_mute') === '1';
     const ctx = () => {
+        if (_muted) return null;
         if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
         if (_ctx.state === 'suspended') _ctx.resume();
         return _ctx;
     };
     const osc = (freq, type, vol, dur, freqEnd) => {
-        const c = ctx(), o = c.createOscillator(), g = c.createGain();
+        const c = ctx(); if (!c) return;
+        const o = c.createOscillator(), g = c.createGain();
         o.connect(g); g.connect(c.destination);
         o.type = type; o.frequency.setValueAtTime(freq, c.currentTime);
         if (freqEnd !== undefined) o.frequency.exponentialRampToValueAtTime(freqEnd, c.currentTime + dur);
@@ -180,7 +203,7 @@ const SFX = (() => {
         o.start(); o.stop(c.currentTime + dur);
     };
     const burst = (vol, dur, cutoff) => {
-        const c = ctx();
+        const c = ctx(); if (!c) return;
         const buf = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate);
         const d = buf.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -216,6 +239,12 @@ const SFX = (() => {
         waveClear() { [261,329,392,523].forEach((n,i) => setTimeout(() => osc(n,'sine',0.28,0.32), i*110)); },
         gameOver()  { [392,330,261,196].forEach((n,i) => setTimeout(() => osc(n,'sawtooth',0.24,0.36), i*170)); },
         stomp()     { burst(0.32, 0.11, 400); osc(95, 'sawtooth', 0.28, 0.14, 38); },
+        get muted() { return _muted; },
+        toggleMute() {
+            _muted = !_muted;
+            localStorage.setItem('dogstrike_mute', _muted ? '1' : '0');
+            if (_ctx) { _muted ? _ctx.suspend() : _ctx.resume(); }
+        },
     };
 })();
 
@@ -1126,11 +1155,23 @@ class PlayScene extends Phaser.Scene {
         this.powerKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
         this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
         this.peeKey     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+        this.escKey     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
 
         this.touch = { left: false, right: false, up: false, strikeFired: false, powerFired: false };
         this.createTouchButtons();
 
         this.strikeRing = this.add.circle(0, 0, 80, C.gold, 0).setDepth(10);
+
+        // Pause state
+        this.gamePaused    = false;
+        this.pauseOverlay  = null;
+        this.pauseText     = null;
+        this.pauseSubText  = null;
+
+        // Tap anywhere to resume when paused
+        this.input.on('pointerdown', () => {
+            if (this.gamePaused && !this.gameOver && !this.waveCleared) this.togglePause();
+        });
 
         // Animation state
         this.animState    = 'idle';
@@ -1256,7 +1297,43 @@ class PlayScene extends Phaser.Scene {
         this.add.text(W / 2, 12, this.hero.name.toUpperCase(), { fontSize: '12px', fill: C.goldS, letterSpacing: 2, fontStyle: 'bold' }).setOrigin(0.5, 0);
         this.remainText = this.add.text(W / 2, 30, '', { fontSize: '11px', fill: C.tealS }).setOrigin(0.5, 0);
 
+        // Pause button — top center, always visible
+        const pauseBtn = this.add.text(W / 2, 2, '⏸', { fontSize: '13px', fill: C.goldS })
+            .setOrigin(0.5, 0).setDepth(60).setInteractive({ useHandCursor: true });
+        pauseBtn.on('pointerover',  () => pauseBtn.setAlpha(1.0));
+        pauseBtn.on('pointerout',   () => pauseBtn.setAlpha(0.55));
+        pauseBtn.on('pointerdown',  () => { if (!this.gameOver && !this.waveCleared) this.togglePause(); });
+        pauseBtn.setAlpha(0.55);
+
         this.updateUI();
+    }
+
+    togglePause() {
+        this.gamePaused = !this.gamePaused;
+        if (this.gamePaused) {
+            this.physics.pause();
+            if (!this.pauseOverlay) {
+                const g = this.add.graphics().setDepth(80);
+                g.fillStyle(0x000000, 0.72);
+                g.fillRect(0, 0, W, H);
+                this.pauseOverlay = g;
+                this.pauseText = this.add.text(W / 2, H / 2 - 22, 'PAUSED', {
+                    fontSize: '38px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 10
+                }).setOrigin(0.5).setDepth(81);
+                this.pauseSubText = this.add.text(W / 2, H / 2 + 22, 'TAP  OR  ESC  TO  RESUME', {
+                    fontSize: '12px', fill: C.creamS, letterSpacing: 3
+                }).setOrigin(0.5).setDepth(81);
+            } else {
+                this.pauseOverlay.setVisible(true);
+                this.pauseText.setVisible(true);
+                this.pauseSubText.setVisible(true);
+            }
+        } else {
+            this.physics.resume();
+            this.pauseOverlay?.setVisible(false);
+            this.pauseText?.setVisible(false);
+            this.pauseSubText?.setVisible(false);
+        }
     }
 
     updateUI() {
@@ -1277,11 +1354,24 @@ class PlayScene extends Phaser.Scene {
         this.remainText.setText(this.spawnQueue > 0
             ? this.spawnQueue + ' incoming + ' + alive + ' active'
             : alive + ' remaining');
+
+        // Update ★ power touch button to show cooldown
+        if (this.touchPowerLabel) {
+            if (pwrReady) {
+                this.touchPowerLabel.setText('★').setColor('#ffffff').setAlpha(1);
+            } else {
+                this.touchPowerLabel.setText(Math.ceil(this.powerCD / 60) + 's').setColor(C.tealS).setAlpha(0.75);
+            }
+        }
     }
 
     // ── UPDATE ───────────────────────────────────────────────────────────────
     update(time, delta) {
-        if (this.waveCleared || this.gameOver) return;
+        // ESC toggles pause (always checked, even mid-game)
+        if (Phaser.Input.Keyboard.JustDown(this.escKey) && !this.gameOver && !this.waveCleared) {
+            this.togglePause();
+        }
+        if (this.gamePaused || this.waveCleared || this.gameOver) return;
 
         const left  = this.cursors.left.isDown  || this.touch.left;
         const right = this.cursors.right.isDown || this.touch.right;
@@ -2046,7 +2136,7 @@ class PlayScene extends Phaser.Scene {
         const y = H - 38;
         const makeBtn = (x, label, onDown, onUp) => {
             const g = this.add.graphics().setDepth(50).setScrollFactor(0);
-            this.add.text(x, y, label, { fontSize: '20px', fill: '#ffffff', fontStyle: 'bold' })
+            const txt = this.add.text(x, y, label, { fontSize: '20px', fill: '#ffffff', fontStyle: 'bold' })
                 .setOrigin(0.5).setDepth(51).setScrollFactor(0);
             const zone = this.add.zone(x, y, r * 2, r * 2).setInteractive().setDepth(52).setScrollFactor(0);
             const draw = (on) => {
@@ -2061,12 +2151,13 @@ class PlayScene extends Phaser.Scene {
             zone.on('pointerup',     () => { draw(false); onUp();   });
             zone.on('pointerout',    () => { draw(false); onUp();   });
             zone.on('pointercancel', () => { draw(false); onUp();   });
+            return txt;
         };
         makeBtn(65,  '←', () => { this.touch.left  = true;  }, () => { this.touch.left  = false; });
         makeBtn(156, '→', () => { this.touch.right = true;  }, () => { this.touch.right = false; });
         makeBtn(754, '↑', () => { this.touch.up    = true;  }, () => { this.touch.up    = false; });
         makeBtn(842, '⚡', () => { this.touch.strikeFired = true; }, () => {});
-        makeBtn(912, '★', () => { this.touch.powerFired  = true; }, () => {});
+        this.touchPowerLabel = makeBtn(912, '★', () => { this.touch.powerFired = true; }, () => {});
     }
 
     // ── CITY HALL BACKGROUND ─────────────────────────────────────────────────
@@ -2166,6 +2257,15 @@ const game = new Phaser.Game(config);
         dots.textContent = '.'.repeat(dotCount);
     }, 400);
     window._loadingDotsInterval = iv;
+})();
+
+// ── MUTE BUTTON ──────────────────────────────────────────────────────────────
+(function() {
+    const btn = document.getElementById('mute-btn');
+    if (!btn) return;
+    const sync = () => { btn.textContent = SFX.muted ? '🔇' : '🔊'; };
+    sync();
+    btn.addEventListener('click', () => { SFX.toggleMute(); sync(); });
 })();
 
 // ── ORIENTATION GUARD ────────────────────────────────────────────────────────
