@@ -239,6 +239,7 @@ const SFX = (() => {
         waveClear() { [261,329,392,523].forEach((n,i) => setTimeout(() => osc(n,'sine',0.28,0.32), i*110)); },
         gameOver()  { [392,330,261,196].forEach((n,i) => setTimeout(() => osc(n,'sawtooth',0.24,0.36), i*170)); },
         stomp()     { burst(0.32, 0.11, 400); osc(95, 'sawtooth', 0.28, 0.14, 38); },
+        drone()     { osc(700, 'sawtooth', 0.20, 0.07, 130); osc(1150, 'square', 0.08, 0.05, 480); },
         get muted() { return _muted; },
         toggleMute() {
             _muted = !_muted;
@@ -622,6 +623,64 @@ class BootScene extends Phaser.Scene {
         tex.refresh();
     }
 
+    makeDroneTex(key) {
+        // 44×30 surveillance drone — dark steel body, teal glow, hostile red camera eye.
+        // Camera eye is on the RIGHT side so setFlipX matches direction of travel.
+        const tex = this.textures.createCanvas(key, 44, 30);
+        const ctx = tex.getContext('2d');
+
+        // ── Rotor arms ────────────────────────────────────────────────
+        ctx.strokeStyle = '#243340';  ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(12, 14); ctx.lineTo(7,  8); ctx.stroke();  // left
+        ctx.beginPath(); ctx.moveTo(32, 14); ctx.lineTo(37, 8); ctx.stroke();  // right
+
+        // ── Rotor discs ───────────────────────────────────────────────
+        [[7, 8], [37, 8]].forEach(([cx, cy]) => {
+            ctx.fillStyle = 'rgba(0,210,230,0.15)';  ctx.strokeStyle = 'rgba(0,210,230,0.50)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.ellipse(cx, cy, 6, 2.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = 'rgba(0,200,220,0.38)';  ctx.strokeStyle = 'rgba(80,235,245,0.75)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath(); ctx.ellipse(cx, cy, 3.5, 1.4, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        });
+
+        // ── Fuselage shadow ───────────────────────────────────────────
+        ctx.fillStyle = '#0e1c26';
+        ctx.fillRect(8, 15, 28, 9);
+
+        // ── Fuselage body ─────────────────────────────────────────────
+        ctx.fillStyle = '#1e3040';
+        ctx.fillRect(9, 14, 26, 8);
+
+        // Top highlight strip
+        ctx.fillStyle = '#2a4458';
+        ctx.fillRect(9, 14, 26, 3);
+
+        // Center tech vent stripe
+        ctx.fillStyle = 'rgba(0,185,205,0.48)';
+        ctx.fillRect(13, 16, 14, 2);
+
+        // ── Camera eye (hostile red — right side = default front) ─────
+        ctx.fillStyle = 'rgba(210,25,0,0.28)';
+        ctx.beginPath(); ctx.arc(32, 18, 5, 0, Math.PI * 2); ctx.fill();   // outer glow
+        ctx.fillStyle = '#cc1500';
+        ctx.beginPath(); ctx.arc(32, 18, 2.5, 0, Math.PI * 2); ctx.fill(); // iris
+        ctx.fillStyle = 'rgba(255,175,150,0.72)';
+        ctx.beginPath(); ctx.arc(31.2, 17.2, 0.7, 0, Math.PI * 2); ctx.fill(); // glint
+
+        // ── Body outline (teal glow) ───────────────────────────────────
+        ctx.strokeStyle = 'rgba(0,190,210,0.55)';  ctx.lineWidth = 1;
+        ctx.strokeRect(9.5, 14.5, 25, 7);
+
+        // ── Tail fin ──────────────────────────────────────────────────
+        ctx.fillStyle = '#162230';
+        ctx.fillRect(18, 22, 8, 5);
+        ctx.strokeStyle = 'rgba(0,170,190,0.38)';  ctx.lineWidth = 0.5;
+        ctx.strokeRect(18.5, 22.5, 7, 4);
+
+        tex.refresh();
+    }
+
     create() {
         // Dismiss loading overlay
         const ls = document.getElementById('loading-screen');
@@ -633,7 +692,10 @@ class BootScene extends Phaser.Scene {
 
         this.assetDefs.forEach(d => {
             if (!d.path || this.failedKeys.has(d.key)) {
-                if (!this.textures.exists(d.key)) this.makeRect(d.key, d.w, d.h, d.color);
+                if (!this.textures.exists(d.key)) {
+                    if (d.key === 'enemy_drone') this.makeDroneTex(d.key);
+                    else this.makeRect(d.key, d.w, d.h, d.color);
+                }
             }
         });
 
@@ -1228,9 +1290,10 @@ class PlayScene extends Phaser.Scene {
         this.combo       = 0;
         this.comboMult   = 1;
         this.comboLabel  = null;
-        this.primeHPBg   = null;
-        this.primeHPFg   = null;
-        this.primeHPLbl  = null;
+        this.primeHPBg       = null;
+        this.primeHPFg       = null;
+        this.primeHPLbl      = null;
+        this._droneIntroShown = false;
 
         // Rotate backgrounds by wave so each run feels different (3 visual stages)
         if (this.level === 'factory') {
@@ -1474,7 +1537,13 @@ class PlayScene extends Phaser.Scene {
             bot.isBoss     = false;
             bot.isAdmin    = false;
             bot.isShielded = false;
-            bot.setTint(0x80a0c0);
+            // First drone of the run: show a one-time "jump to hit" hint
+            if (!this._droneIntroShown) {
+                this._droneIntroShown = true;
+                this.time.delayedCall(600, () => {
+                    this.showPopup(W / 2, GROUND_Y - 230, '↑  JUMP TO HIT DRONES!', C.tealS);
+                });
+            }
         } else {
             bot.setDisplaySize(isBoss ? 80 : isAdmin ? 56 : 52, isBoss ? 88 : isAdmin ? 70 : 64);
             bot.isBoss     = isBoss;
@@ -1649,6 +1718,7 @@ class PlayScene extends Phaser.Scene {
                 r._sineTime += 0.04;
                 r.setY(GROUND_Y - 185 + Math.sin(r._sineTime) * 22);
                 r.body.setVelocityX(r.velX);
+                r.setFlipX(r.velX < 0);   // camera eye faces direction of travel
                 return;
             }
 
@@ -1866,12 +1936,12 @@ class PlayScene extends Phaser.Scene {
                 this.showPopup(robot.x, robot.y - 40, '+' + finalPts, C.goldS);
 
                 if (robot.isDrone) {
-                    // Drone death — drop with gravity instead of instant vanish
+                    // Drone death — zap FX then drop with gravity
                     robot.isDrone = false;
                     robot.body.setAllowGravity(true);
                     robot.body.setVelocityY(60);
-                    this.destroyEffect(robot.x, robot.y, 0x80a0c0, false, false);
-                    SFX.destroy(false);
+                    this.destroyEffect(robot.x, robot.y, C.teal, false, false);
+                    SFX.drone();
                     this.time.delayedCall(300, () => { if (robot.active) robot.destroy(); });
                 } else if (robot.isPrime) {
                     // Chronos Prime defeated — victory
