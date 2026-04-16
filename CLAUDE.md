@@ -68,3 +68,19 @@ Background keys are rotated per wave in `PlayScene.init()` to vary visual feel w
 - **Procedural Art Deco visuals**: Backgrounds, UI chrome, and special-power effects are drawn with Phaser Graphics calls, not external images. The recurring "all-seeing eye" motif appears in `drawDecoEyeStatic` (static) and `drawDecoEye` (animated, destroys itself after tweening out).
 - **Scene data passing**: All persistent state (wave number, score, hero selection) is passed explicitly via `scene.start(key, data)` — there is no global state or registry used between scenes.
 
+## Debugging
+
+After implementing any fix, verify it works by reading the relevant code path end-to-end before declaring it done. If a fix involves patching or monkey-patching a library (e.g. Phaser internals), confirm the patch runs before the affected code and is not bypassed by cached internal references.
+
+Always check initialization order when adding new game systems — ensure dependencies (player, robots, physics groups, etc.) are created before any system that references them.
+
+## Deployment
+
+`deploy.sh` syncs assets to S3 and invalidates the CloudFront cache. Before running it, verify AWS credentials are active:
+
+```bash
+aws sts get-caller-identity
+```
+
+If expired, re-authenticate first. The deploy script will fail silently-ish otherwise.
+
