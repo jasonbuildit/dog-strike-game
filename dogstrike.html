@@ -524,19 +524,30 @@ function createHeroAnimations(scene) {
         ['idle', 'walk', 'jump', 'strike', 'special'].forEach(a => {
             if (scene.anims.exists(id + '_' + a)) scene.anims.remove(id + '_' + a);
         });
+
+        // Defensive frame accessor: returns n if it exists in the texture, else 0.
+        // Guards against AI PNG sheets with fewer frames than expected.
+        const tex = scene.textures.get(key);
+        const f = n => tex.has(n) ? n : 0;
+        console.log('[DogStrike] ' + key + ' frameTotal=' + tex.frameTotal);
+
         scene.anims.create({ key: id + '_idle',
-            frames: [{ key, frame: 0 }, { key, frame: 1 }], frameRate: 2, repeat: -1 });
-        // 4-frame run cycle; improved poses in Canvas 2D fallback, AI PNGs use their own art
+            frames: [{ key, frame: f(0) }, { key, frame: f(1) }],
+            frameRate: 2, repeat: -1 });
         scene.anims.create({ key: id + '_walk',
-            frames: [{ key, frame: 2 }, { key, frame: 3 }, { key, frame: 4 }, { key, frame: 5 }],
+            frames: [{ key, frame: f(2) }, { key, frame: f(3) }, { key, frame: f(4) }, { key, frame: f(5) }],
             frameRate: 12, repeat: -1 });
         scene.anims.create({ key: id + '_jump',
-            frames: [{ key, frame: 6 }], frameRate: 1, repeat: 0 });
+            frames: [{ key, frame: f(6) }],
+            frameRate: 1, repeat: 0 });
         scene.anims.create({ key: id + '_strike',
-            frames: [{ key, frame: 7 }, { key, frame: 0 }], frameRate: 14, repeat: 0 });
-        // Frames 8-10: special power windup → peak → release
+            frames: [{ key, frame: f(7) }, { key, frame: f(0) }],
+            frameRate: 14, repeat: 0 });
+        // Use frames 8-10 for special if available, else reuse jump/strike frames
         scene.anims.create({ key: id + '_special',
-            frames: [{ key, frame: 8 }, { key, frame: 9 }, { key, frame: 10 }, { key, frame: 0 }],
+            frames: tex.has(8)
+                ? [{ key, frame: f(8) }, { key, frame: f(9) }, { key, frame: f(10) }, { key, frame: f(0) }]
+                : [{ key, frame: f(6) }, { key, frame: f(7) }, { key, frame: f(0) }],
             frameRate: 8, repeat: 0 });
     });
 }
@@ -581,6 +592,7 @@ class BootScene extends Phaser.Scene {
             { key: 'bg_rotunda_c',   path: './assets/background/bg_rotunda_c.png',            w: 800, h: 600, color: 0x0d1a0a },
             { key: 'ground_tile',    path: null,                                               w: 64,  h: 32,  color: 0x3d2a1e },
             { key: 'ground_marble',  path: null,                                               w: 64,  h: 32,  color: 0x5a6070 },
+            { key: 'enemy_drone',    path: null,                                               w: 44,  h: 30,  color: 0x607080 },
         ];
         this.load.on('loaderror', (f) => this.failedKeys.add(f.key));
         this.assetDefs.forEach(d => { if (d.path) this.load.image(d.key, d.path); });
@@ -597,13 +609,17 @@ class BootScene extends Phaser.Scene {
     }
 
     makeRect(key, w, h, color) {
-        const g = this.make.graphics({ x: 0, y: 0, add: false });
-        g.fillStyle(color, 1);
-        g.fillRect(0, 0, w, h);
-        g.lineStyle(2, C.gold, 0.5);
-        g.strokeRect(1, 1, w - 2, h - 2);
-        g.generateTexture(key, w, h);
-        g.destroy();
+        // Use createCanvas instead of generateTexture — guarantees __BASE frame exists
+        // (generateTexture in WebGL mode can produce textures without a valid __BASE frame)
+        const r = (color >> 16) & 0xff, g = (color >> 8) & 0xff, b = color & 0xff;
+        const tex = this.textures.createCanvas(key, w, h);
+        const ctx = tex.getContext('2d');
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = `rgba(212,175,55,0.5)`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, w - 2, h - 2);
+        tex.refresh();
     }
 
     create() {
@@ -631,6 +647,28 @@ class BootScene extends Phaser.Scene {
             console.log('[DogStrike] AI-generated hero sheets loaded');
         }
         createHeroAnimations(this);
+
+        // Guard: before every game step, fix any sprite/image with a null frame.
+        // The Canvas renderer crashes with "null.cut" when sprite.frame is null.
+        // This can happen if an animation stores a null TextureFrame reference,
+        // or if a texture's __BASE frame was missing at sprite-creation time.
+        this.sys.game.events.on('prestep', () => {
+            this.sys.game.scene.scenes.forEach(scene => {
+                if (!scene.sys || !scene.sys.isActive() || !scene.children) return;
+                scene.children.list.forEach(obj => {
+                    if (!obj || !obj.active || !('_frame' in obj) || obj._frame !== null) return;
+                    const tex = obj.texture;
+                    if (!tex || !tex.frames) return;
+                    const key = tex.firstFrame ?? Object.keys(tex.frames)[0];
+                    if (key !== undefined && tex.frames[key]) {
+                        obj._frame = tex.frames[key];
+                        console.warn('[DogStrike] FIXED null _frame — obj:', obj.constructor?.name,
+                            'tex:', tex.key, 'fallback frame:', key);
+                    }
+                });
+            });
+        });
+
         this.scene.start('TitleScene');
     }
 }
@@ -840,6 +878,7 @@ class StoryScene extends Phaser.Scene {
                     { heading: 'ONWARD TO CITY HALL',      lines: ['The fight is not over.', 'The march continues...'] },
                 ],
                 unlock: '★ GERMAN SHEPHERD UNLOCKED',
+                nextAction: 'heroselect',
             },
             {
                 title: 'THE STORMING OF CITY HALL',
@@ -851,6 +890,19 @@ class StoryScene extends Phaser.Scene {
                     { heading: 'BARK-BROKEN!',         lines: ['"...solidarity became a storm."', 'The rotunda awaits.'] },
                 ],
                 unlock: '★ DACHSHUND UNLOCKED',
+                nextAction: 'heroselect',
+            },
+            {
+                title: 'SOLIDARITY FOREVER',
+                subtitle: 'THE ROTUNDA FALLS',
+                panels: [
+                    { heading: 'THE GREAT MACHINE SHUDDERS', lines: ['Chronos Prime crumbles.', 'Gears and cogs scatter.'] },
+                    { heading: 'THE WORKERS PREVAIL',        lines: ['Paw raised to the sky —', 'the factory floor erupts.'] },
+                    { heading: 'SOLIDARITY FOREVER',         lines: ['"They could break machines."', '"They could never break us."'] },
+                    { heading: 'THE END',                    lines: ['DOGSONSTRIKE.COM  —  v1.0', 'Thank you for playing.'] },
+                ],
+                unlock: null,
+                nextAction: 'credits',
             },
         ];
 
@@ -889,10 +941,17 @@ class StoryScene extends Phaser.Scene {
             this.drawPanel(cx, cy, pw, ph, panel, i, this.beatIndex);
         });
 
-        const prompt = this.add.text(W / 2, H - 18, 'SPACE → Continue', { fontSize: '13px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
+        const promptText = beat.nextAction === 'credits' ? 'SPACE → See Credits' : 'SPACE → Continue';
+        const prompt = this.add.text(W / 2, H - 18, promptText, { fontSize: '13px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
         this.tweens.add({ targets: prompt, alpha: 0.25, duration: 950, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
 
-        const go = () => this.scene.start('HeroSelectScene', { wave: this.wave, score: this.score });
+        const go = () => {
+            if (beat.nextAction === 'credits') {
+                this.showCredits();
+            } else {
+                this.scene.start('HeroSelectScene', { wave: this.wave, score: this.score });
+            }
+        };
         this.input.keyboard.once('keydown-SPACE', go);
         this.input.once('pointerdown', go);
     }
@@ -984,7 +1043,7 @@ class StoryScene extends Phaser.Scene {
                 g.lineBetween(cx - 2, am - 30, cx + 14, am - 20);
                 g.lineBetween(cx - 2, am - 10, cx + 14, am - 20);
             }
-        } else {
+        } else if (beatIndex === 1) {
             if (index === 0) {
                 // City Hall facade
                 g.fillStyle(0x1a1535, 1);
@@ -1052,7 +1111,102 @@ class StoryScene extends Phaser.Scene {
                 g.lineStyle(1, C.gold, 0.55);
                 g.strokeCircle(cx + 64, am - 30, 22);
             }
+        } else if (beatIndex === 2) {
+            // beatIndex 2: Chronos Prime defeated — victory panels
+            if (index === 0) {
+                // Crumbling machine giant
+                g.fillStyle(0x3a1010, 1);
+                g.fillRect(cx - 50, am - 30, 100, 50);
+                g.lineStyle(2, C.crimson, 0.55);
+                g.strokeRect(cx - 50, am - 30, 100, 50);
+                // Debris lines
+                for (let i = 0; i < 8; i++) {
+                    const da = (i / 8) * Math.PI * 2;
+                    g.lineStyle(1, C.crimson, 0.5);
+                    g.lineBetween(cx, am, cx + Math.cos(da) * 55, am + Math.sin(da) * 55);
+                }
+                g.fillStyle(C.crimson, 0.25); g.fillCircle(cx, am, 20);
+            } else if (index === 1) {
+                // Raised paw victory
+                g.fillStyle(C.gold, 0.7);
+                for (let i = 0; i < 5; i++) { g.fillRect(cx - 50 + i * 26, am - 12, 18, 32); }
+                // Paw raised high
+                g.fillRect(cx - 6, am - 52, 16, 44);
+                g.fillCircle(cx + 2, am - 58, 10);
+                for (let t = 0; t < 3; t++) {
+                    const ta = -0.8 + t * 0.8;
+                    g.fillCircle(cx + 2 + Math.cos(ta) * 12, am - 62 + Math.sin(ta) * 6, 5);
+                }
+                // Burst rays
+                for (let i = 0; i < 10; i++) {
+                    const ba = (i / 10) * Math.PI * 2;
+                    g.lineStyle(1, C.gold, 0.55);
+                    g.lineBetween(cx + 2, am - 58, cx + 2 + Math.cos(ba) * 32, am - 58 + Math.sin(ba) * 32);
+                }
+            } else if (index === 2) {
+                // Banner unfurling
+                g.fillStyle(0x1a2a1a, 1); g.fillRect(cx - 72, am - 20, 144, 42);
+                g.lineStyle(2, C.gold, 0.7);
+                g.strokeRect(cx - 72, am - 20, 144, 42);
+                g.lineStyle(1, C.gold, 0.4);
+                g.lineBetween(cx - 56, am - 4, cx + 56, am - 4);
+                g.lineBetween(cx - 56, am + 8, cx + 56, am + 8);
+                // Eye of solidarity
+                drawDecoEyeStatic(this, cx, am - 30, C.gold, 0.6);
+            } else {
+                // "THE END" — simple gold star field
+                for (let i = 0; i < 12; i++) {
+                    const sx = cx - 60 + (i % 6) * 24;
+                    const sy = am - 32 + Math.floor(i / 6) * 28;
+                    g.fillStyle(C.gold, 0.35 + Math.random() * 0.4);
+                    g.fillCircle(sx, sy, 3);
+                }
+                drawDecoEyeStatic(this, cx, am - 8, C.gold, 0.5);
+            }
         }
+    }
+
+    showCredits() {
+        this.input.keyboard.removeAllListeners();
+        this.input.removeAllListeners();
+
+        // Overlay
+        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x040208, 0.97).setDepth(60);
+        const g = this.add.graphics().setDepth(61);
+        g.lineStyle(1, C.gold, 0.35); g.strokeRect(20, 20, W - 40, H - 40);
+        g.lineStyle(1, C.gold, 0.15); g.strokeRect(28, 28, W - 56, H - 56);
+
+        this.add.text(W / 2, 68, 'SOLIDARITY FOREVER', {
+            fontSize: '30px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 8
+        }).setOrigin(0.5).setDepth(62);
+
+        this.add.text(W / 2, 108, '— YOU BROKE THE MACHINE —', {
+            fontSize: '13px', fill: C.creamS, letterSpacing: 4
+        }).setOrigin(0.5).setDepth(62);
+
+        this.add.text(W / 2, 178, 'FINAL SCORE', { fontSize: '14px', fill: C.tealS, letterSpacing: 3 }).setOrigin(0.5).setDepth(62);
+        this.add.text(W / 2, 214, String(this.score), {
+            fontSize: '44px', fill: C.goldS, fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(62);
+
+        this.add.text(W / 2, 278, 'WAVE ' + this.wave + '  COMPLETE', {
+            fontSize: '14px', fill: C.creamS, letterSpacing: 3
+        }).setOrigin(0.5).setDepth(62);
+
+        // Solidarity badge
+        drawDecoEyeStatic(this, W / 2, 348, C.gold, 0.75);
+        this.add.text(W / 2, 390, '★  SOLIDARITY BADGE  ★', {
+            fontSize: '13px', fill: C.goldS, letterSpacing: 3
+        }).setOrigin(0.5).setDepth(62);
+
+        const prompt = this.add.text(W / 2, H - 38, 'TAP  or  SPACE → Return to Title', {
+            fontSize: '13px', fill: C.goldS, letterSpacing: 2
+        }).setOrigin(0.5).setDepth(62);
+        this.tweens.add({ targets: prompt, alpha: 0.25, duration: 900, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+
+        const done = () => this.scene.start('TitleScene');
+        this.input.keyboard.once('keydown-SPACE', done);
+        this.input.once('pointerdown', done);
     }
 }
 
@@ -1071,6 +1225,12 @@ class PlayScene extends Phaser.Scene {
         this.waveCleared = false;
         this.spawnQueue  = 0;
         this.gameOver    = false;
+        this.combo       = 0;
+        this.comboMult   = 1;
+        this.comboLabel  = null;
+        this.primeHPBg   = null;
+        this.primeHPFg   = null;
+        this.primeHPLbl  = null;
 
         // Rotate backgrounds by wave so each run feels different (3 visual stages)
         if (this.level === 'factory') {
@@ -1225,23 +1385,58 @@ class PlayScene extends Phaser.Scene {
 
     spawnNext() {
         if (this.waveCleared) return;
-        const isBoss  = (this.wave % 3 === 0) && (this.spawnQueue <= 1);
+
+        // Wave 10: Chronos Prime — sole enemy, override entire wave
+        const isPrime = (this.wave === 10) && (this.spawnQueue >= this.calcWaveCount());
+        if (isPrime) {
+            this.spawnQueue = 0;  // no more spawns this wave
+            if (this.spawnTimer) this.spawnTimer.remove(false);  // stop queued spawn calls
+            const spawnX = W / 2 + 200, spawnY = GROUND_Y - 70;
+            const bot = this.robots.create(spawnX, spawnY, 'boss_chronos');
+            bot.setVelocityX(-55);
+            bot.setDisplaySize(96, 110);
+            bot.setCollideWorldBounds(false);
+            bot.isBoss      = true;
+            bot.isPrime     = true;
+            bot.primePhase  = 1;
+            bot.hp          = 5;
+            bot.maxHp       = 5;
+            bot.isAdmin     = false;
+            bot.isShielded  = false;
+            bot.scoreVal    = 1000;
+            bot._chargeCD   = 180;
+            bot._jumpCD     = 0;
+            bot._primeSpeed = 55;
+            bot.setTint(0xcc4444);
+            this.showBossTitle('CHRONOS PRIME');
+            this.showPrimeHPBar();
+            return;
+        }
+
+        const isBoss  = !isPrime && (this.wave % 3 === 0) && (this.spawnQueue <= 1);
         const isAdmin = this.level === 'cityhall' && !isBoss && Math.random() > 0.5;
-        const isShielded = !isBoss && !isAdmin && this.wave >= 2 && Math.random() > 0.7;
+        const isDrone = !isBoss && !isAdmin && this.wave >= 4 && Math.random() < 0.20;
+        const isShielded = !isBoss && !isAdmin && !isDrone && this.wave >= 2 && Math.random() > 0.7;
 
         let key;
-        if (isBoss)  key = 'boss_chronos';
+        if (isBoss)       key = 'boss_chronos';
         else if (isAdmin) key = 'enemy_admin';
+        else if (isDrone) key = 'enemy_drone';
         else key = Math.random() > 0.6 ? 'enemy_heavy' : 'enemy_enforcer';
 
         // Speed scales with wave (+6% per wave above 1)
         const speedMult = 1 + (this.wave - 1) * 0.06;
 
-        // Platform spawn: 25% chance for non-boss enemies from wave 2 onward
-        const isPlatform = !isBoss && this.wave >= 2 && Math.random() < 0.25;
+        // Platform spawn: 25% chance for non-boss, non-drone enemies from wave 2 onward
+        const isPlatform = !isBoss && !isDrone && this.wave >= 2 && Math.random() < 0.25;
 
         let spawnX, spawnY, velX;
-        if (isPlatform) {
+        if (isDrone) {
+            const fromLeft = Math.random() < 0.5;
+            spawnX = fromLeft ? Phaser.Math.Between(-60, -20) : Phaser.Math.Between(W + 20, W + 60);
+            spawnY = GROUND_Y - 185;
+            velX   = fromLeft ? Phaser.Math.Between(55, 80) : -Phaser.Math.Between(55, 80);
+        } else if (isPlatform) {
             // Alternate between left and right conveyor belt
             this.platSpawnToggle = !this.platSpawnToggle;
             const belt = this.beltDefs[this.platSpawnToggle ? 0 : 1];
@@ -1266,13 +1461,30 @@ class PlayScene extends Phaser.Scene {
 
         const bot = this.robots.create(spawnX, spawnY, key);
         bot.setVelocityX(velX);
-        bot.setDisplaySize(isBoss ? 80 : isAdmin ? 56 : 52, isBoss ? 88 : isAdmin ? 70 : 64);
+
+        if (isDrone) {
+            bot.body.setAllowGravity(false);
+            bot.setDisplaySize(44, 30);
+            bot.isDrone    = true;
+            bot._sineTime  = Math.random() * Math.PI * 2;
+            bot.velX       = velX;
+            bot.hp         = 1;
+            bot.maxHp      = 1;
+            bot.scoreVal   = 120;
+            bot.isBoss     = false;
+            bot.isAdmin    = false;
+            bot.isShielded = false;
+            bot.setTint(0x80a0c0);
+        } else {
+            bot.setDisplaySize(isBoss ? 80 : isAdmin ? 56 : 52, isBoss ? 88 : isAdmin ? 70 : 64);
+            bot.isBoss     = isBoss;
+            bot.isAdmin    = isAdmin;
+            bot.isShielded = isShielded || isAdmin;  // admins always shielded
+            bot.hp         = isBoss ? 3 : (isAdmin || isShielded) ? 2 : 1;
+            bot.maxHp      = bot.hp;
+            if (bot.isShielded) bot.setTint(isAdmin ? 0x88aaff : 0x44aaff);
+        }
         bot.setCollideWorldBounds(false);
-        bot.isBoss     = isBoss;
-        bot.isAdmin    = isAdmin;
-        bot.isShielded = isShielded || isAdmin;  // admins always shielded
-        bot.hp         = isBoss ? 3 : (isAdmin || isShielded) ? 2 : 1;
-        if (bot.isShielded) bot.setTint(isAdmin ? 0x88aaff : 0x44aaff);
         this.spawnQueue--;
     }
 
@@ -1286,16 +1498,16 @@ class PlayScene extends Phaser.Scene {
         this.add.rectangle(22 + 149, 58 + 6, 302, 14, 0x000000, 0.7).setOrigin(0.5);
         this.pwrBg = this.add.rectangle(22, 58, 300, 12, 0x1a2a28).setOrigin(0, 0);
         this.pwrFg = this.add.rectangle(23, 59, 0, 10, C.teal).setOrigin(0, 0);
-        this.pwrLabel = this.add.text(22, 73, '', { fontSize: '10px', fill: C.tealS, letterSpacing: 1 });
+        this.pwrLabel = this.add.text(22, 73, this.hero.powerName + ' [X]', { fontSize: '10px', fill: C.tealS, letterSpacing: 1 });
 
-        this.waveText  = this.add.text(W - 16, 12, '', { fontSize: '18px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(1, 0);
-        this.scoreText = this.add.text(W - 16, 36, '', { fontSize: '12px', fill: C.creamS }).setOrigin(1, 0);
+        this.waveText  = this.add.text(W - 16, 12, 'WAVE ' + this.wave, { fontSize: '18px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(1, 0);
+        this.scoreText = this.add.text(W - 16, 36, 'SCORE: ' + this.score, { fontSize: '12px', fill: C.creamS }).setOrigin(1, 0);
         this.levelText = this.add.text(W - 16, 56, this.level === 'cityhall' ? 'CITY HALL' : 'FACTORY', {
             fontSize: '10px', fill: C.tealS, letterSpacing: 2
         }).setOrigin(1, 0);
 
         this.add.text(W / 2, 12, this.hero.name.toUpperCase(), { fontSize: '12px', fill: C.goldS, letterSpacing: 2, fontStyle: 'bold' }).setOrigin(0.5, 0);
-        this.remainText = this.add.text(W / 2, 30, '', { fontSize: '11px', fill: C.tealS }).setOrigin(0.5, 0);
+        this.remainText = this.add.text(W / 2, 30, this.spawnQueue + ' incoming', { fontSize: '11px', fill: C.tealS }).setOrigin(0.5, 0);
 
         // Pause button — top center, always visible
         const pauseBtn = this.add.text(W / 2, 2, '⏸', { fontSize: '13px', fill: C.goldS })
@@ -1304,8 +1516,10 @@ class PlayScene extends Phaser.Scene {
         pauseBtn.on('pointerout',   () => pauseBtn.setAlpha(0.55));
         pauseBtn.on('pointerdown',  () => { if (!this.gameOver && !this.waveCleared) this.togglePause(); });
         pauseBtn.setAlpha(0.55);
-
-        this.updateUI();
+        // NOTE: updateUI() is intentionally NOT called here.
+        // All text objects above are initialized with their real initial values,
+        // and update() calls updateUI() every frame — so the first tick corrects
+        // any bar sizes without risking a null-frame crash during create().
     }
 
     togglePause() {
@@ -1429,6 +1643,65 @@ class PlayScene extends Phaser.Scene {
         // Robot AI: belt push + occasional platform jump
         this.robots.children.entries.forEach(r => {
             if (!r.active) return;
+
+            // ── Drone AI: sine-wave flight ─────────────────────────────────
+            if (r.isDrone) {
+                r._sineTime += 0.04;
+                r.setY(GROUND_Y - 185 + Math.sin(r._sineTime) * 22);
+                r.body.setVelocityX(r.velX);
+                return;
+            }
+
+            // ── Chronos Prime phase AI ─────────────────────────────────────
+            if (r.isPrime) {
+                const targetPhase = r.hp >= 4 ? 1 : r.hp >= 2 ? 2 : 3;
+                if (targetPhase !== r.primePhase) {
+                    r.primePhase = targetPhase;
+                    if (targetPhase === 2) {
+                        // Spawn 2 enforcer minibots near the boss
+                        for (let m = 0; m < 2; m++) {
+                            const mx = r.x + (m === 0 ? -80 : 80);
+                            const mb = this.robots.create(mx, GROUND_Y - 50, 'enemy_enforcer');
+                            mb.setDisplaySize(52, 64);
+                            mb.setCollideWorldBounds(false);
+                            mb.isBoss = false; mb.isAdmin = false; mb.isShielded = false;
+                            mb.hp = 1; mb.maxHp = 1;
+                            mb.setVelocityX(m === 0 ? -60 : 60);
+                        }
+                        this.showPopup(r.x, r.y - 60, 'REINFORCEMENTS!', C.crimsonS);
+                        this.cameras.main.shake(180, 0.01);
+                    }
+                    if (targetPhase === 3) {
+                        r._primeSpeed = Math.round((r._primeSpeed || 55) * 1.6);
+                        this.showPopup(r.x, r.y - 60, 'ENRAGED!', C.crimsonS);
+                        this.cameras.main.shake(220, 0.015);
+                    }
+                }
+
+                const dir = this.player.x < r.x ? -1 : 1;
+                if (r.primePhase === 2) {
+                    r._chargeCD = (r._chargeCD || 180) - 1;
+                    if (r._chargeCD <= 0) {
+                        r.body.setVelocityX(dir * 260);
+                        r._chargeCD = 180;
+                    } else {
+                        r.body.setVelocityX(dir * (r._primeSpeed || 55));
+                    }
+                } else if (r.primePhase === 3) {
+                    r.body.setVelocityX(dir * (r._primeSpeed || 88));
+                    if (r.body.blocked.down) {
+                        if (!r._jumpCD) r._jumpCD = Phaser.Math.Between(90, 160);
+                        if (--r._jumpCD <= 0) {
+                            r._jumpCD = Phaser.Math.Between(90, 160);
+                            r.body.setVelocityY(-420);
+                        }
+                    }
+                } else {
+                    r.body.setVelocityX(dir * (r._primeSpeed || 55));
+                }
+                return;
+            }
+
             if (r.body.blocked.down) {
                 // Apply belt velocity when standing on a conveyor
                 if (r.body.bottom < GROUND_Y - 40) {
@@ -1453,6 +1726,19 @@ class PlayScene extends Phaser.Scene {
         if (this.spawnQueue <= 0 && this.robots.countActive(true) === 0 && !this.waveCleared) {
             this.waveCleared = true;
             this.time.delayedCall(400, () => this.showWaveCleared());
+        }
+
+        // Update prime HP bar if active
+        if (this.primeHPFg) {
+            const primeBot = this.robots.children.entries.find(r => r.active && r.isPrime);
+            if (primeBot) {
+                this.primeHPFg.setDisplaySize(Math.floor(298 * primeBot.hp / primeBot.maxHp), 8);
+            }
+        }
+
+        // Track combo label to player position
+        if (this.comboLabel && this.combo > 1) {
+            this.comboLabel.setPosition(this.player.x, this.player.y - 65);
         }
 
         // ── Player animation state machine ────────────────────────────────────
@@ -1557,29 +1843,66 @@ class PlayScene extends Phaser.Scene {
         this.robots.children.entries.forEach(robot => {
             if (!robot.active) return;
             if (Phaser.Math.Distance.BetweenPoints(this.player, robot) >= this.hero.strikeRange) return;
+            // Drones can only be hit while player is airborne (at least 50px above ground)
+            if (robot.isDrone && this.player.y > GROUND_Y - 110) return;
             if (robot.isShielded && this.hero.id !== 'dachshund') {
                 this.showPopup(robot.x, robot.y - 30, 'SHIELDED', C.tealS);
                 this.cameras.main.shake(40, 0.003);
                 SFX.shield();
+                this.resetCombo();
                 return;
             }
             robot.hp--;
             this.cameras.main.shake(70, 0.005);
             if (robot.hp <= 0) {
                 hitRx = robot.x; hitRy = robot.y;
-                hitIsBoss = robot.isBoss; hitIsAdmin = robot.isAdmin;
-                const pts = robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
-                this.score += pts;
-                this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
-                const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
-                robot.setVisible(false);
-                robot.body.enable = false;
-                this.destroyEffect(bx, by, C.gold, bf, sf);
-                SFX.destroy(bf);
-                this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                hitIsBoss = robot.isBoss || robot.isPrime; hitIsAdmin = robot.isAdmin;
+                const basePts = robot.isPrime ? 1000 : robot.isDrone ? 120 : robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
+                this.combo++;
+                const newMult = this.comboToMult(this.combo);
+                if (newMult !== this.comboMult) { this.comboMult = newMult; this.showComboPopup(newMult); }
+                const finalPts = basePts * this.comboMult;
+                this.score += finalPts;
+                this.showPopup(robot.x, robot.y - 40, '+' + finalPts, C.goldS);
+
+                if (robot.isDrone) {
+                    // Drone death — drop with gravity instead of instant vanish
+                    robot.isDrone = false;
+                    robot.body.setAllowGravity(true);
+                    robot.body.setVelocityY(60);
+                    this.destroyEffect(robot.x, robot.y, 0x80a0c0, false, false);
+                    SFX.destroy(false);
+                    this.time.delayedCall(300, () => { if (robot.active) robot.destroy(); });
+                } else if (robot.isPrime) {
+                    // Chronos Prime defeated — victory
+                    const bx = robot.x, by = robot.y;
+                    robot.setVisible(false);
+                    robot.body.enable = false;
+                    this.destroyEffect(bx, by, C.crimson, true, false);
+                    this.destroyEffect(bx, by + 10, C.gold, true, false);
+                    SFX.destroy(true);
+                    this.cameras.main.shake(500, 0.025);
+                    this.waveCleared = true;
+                    // Clean up prime HP bar
+                    if (this.primeHPBg) { this.primeHPBg.destroy(); this.primeHPBg = null; }
+                    if (this.primeHPFg) { this.primeHPFg.destroy(); this.primeHPFg = null; }
+                    if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
+                    this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
+                    this.time.delayedCall(1400, () => {
+                        saveHS(this.score);
+                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave, score: this.score });
+                    });
+                } else {
+                    const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
+                    robot.setVisible(false);
+                    robot.body.enable = false;
+                    this.destroyEffect(bx, by, C.gold, bf, sf);
+                    SFX.destroy(bf);
+                    this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                }
             } else {
                 hitRx = robot.x; hitRy = robot.y;
-                hitIsBoss = robot.isBoss; hitIsAdmin = robot.isAdmin;
+                hitIsBoss = robot.isBoss || robot.isPrime; hitIsAdmin = robot.isAdmin;
                 robot.setTint(0xff4444);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
                 SFX.hit();
@@ -1587,7 +1910,7 @@ class PlayScene extends Phaser.Scene {
             hit = true;
         });
 
-        if (!hit) SFX.miss();
+        if (!hit) { SFX.miss(); this.resetCombo(); }
         this.showPopup(px, py - 50, hit ? 'STRIKE!' : 'MISS', hit ? C.goldS : C.orangeS);
         this.strikeEffects(hit, hitRx, hitRy, hitIsBoss, hitIsAdmin);
     }
@@ -2034,6 +2357,63 @@ class PlayScene extends Phaser.Scene {
         this.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 700, onComplete: () => t.destroy() });
     }
 
+    // ── COMBO MULTIPLIER ─────────────────────────────────────────────────────
+    comboToMult(n) {
+        if (n >= 7) return 5;
+        if (n >= 4) return 3;
+        if (n >= 2) return 2;
+        return 1;
+    }
+
+    resetCombo() {
+        if (this.combo === 0) return;
+        this.combo = 0;
+        this.comboMult = 1;
+        if (this.comboLabel) {
+            this.tweens.add({ targets: this.comboLabel, alpha: 0, duration: 200,
+                onComplete: () => { if (this.comboLabel) { this.comboLabel.setText(''); this.comboLabel.setAlpha(1); } }
+            });
+        }
+    }
+
+    showComboPopup(mult) {
+        const labels = { 2: '2× STREAK', 3: '3× HOT!', 5: '5× UNSTOPPABLE!' };
+        const colors = { 2: C.goldS, 3: C.orangeS, 5: C.crimsonS };
+        if (!this.comboLabel) {
+            this.comboLabel = this.add.text(this.player.x, this.player.y - 65, '',
+                { fontSize: '14px', fontStyle: 'bold', letterSpacing: 2, stroke: '#000', strokeThickness: 2 }
+            ).setOrigin(0.5).setDepth(20);
+        }
+        this.comboLabel.setText(labels[mult]).setColor(colors[mult]).setAlpha(1);
+        this.tweens.killTweensOf(this.comboLabel);
+        this.tweens.add({ targets: this.comboLabel, scaleX: 1.3, scaleY: 1.3,
+            duration: 120, ease: 'Back.Out', yoyo: true });
+    }
+
+    // ── BOSS HELPERS ──────────────────────────────────────────────────────────
+    showBossTitle(name) {
+        const t = this.add.text(W / 2, 90, name, {
+            fontSize: '28px', fill: C.crimsonS, fontStyle: 'bold', letterSpacing: 6,
+            stroke: '#000', strokeThickness: 4
+        }).setOrigin(0.5).setDepth(55).setAlpha(0).setScale(0.4);
+        this.tweens.add({ targets: t, alpha: 1, scaleX: 1, scaleY: 1,
+            duration: 400, ease: 'Back.Out',
+            onComplete: () => {
+                this.time.delayedCall(1400, () => {
+                    this.tweens.add({ targets: t, alpha: 0, duration: 400, onComplete: () => t.destroy() });
+                });
+            }
+        });
+    }
+
+    showPrimeHPBar() {
+        this.primeHPBg  = this.add.rectangle(W / 2, H - 18, 302, 12, 0x3d1a1a).setOrigin(0.5).setDepth(55);
+        this.primeHPFg  = this.add.rectangle(W / 2 - 149, H - 18, 298, 8, C.crimson).setOrigin(0, 0.5).setDepth(56);
+        this.primeHPLbl = this.add.text(W / 2, H - 32, 'CHRONOS PRIME', {
+            fontSize: '10px', fill: C.crimsonS, letterSpacing: 3
+        }).setOrigin(0.5).setDepth(56);
+    }
+
     // ── COLLISION ────────────────────────────────────────────────────────────
     onHit(player, robot) {
         if (!robot.active || !robot.body || !player.body) return;
@@ -2043,19 +2423,37 @@ class PlayScene extends Phaser.Scene {
             if (robot._stomped) return;
             robot._stomped = true;
 
-            const pts = robot.isBoss ? 500 : robot.isAdmin ? 350 : robot.isShielded ? 225 : 150;
+            const pts = robot.isPrime ? 500 : robot.isBoss ? 500 : robot.isAdmin ? 350 : robot.isShielded ? 225 : 150;
             robot.hp--;
             this.score += pts;
             this.showPopup(robot.x, robot.y - 40, 'STOMP! +' + pts, C.orangeS);
             SFX.stomp();
 
             if (robot.hp <= 0) {
-                const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
-                robot.setVisible(false);
-                robot.body.enable = false;
-                this.destroyEffect(bx, by, C.orange, bf, sf);
-                SFX.destroy(bf);
-                this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                if (robot.isPrime) {
+                    // Prime killed by stomp — trigger victory sequence
+                    robot.setVisible(false); robot.body.enable = false;
+                    this.destroyEffect(robot.x, robot.y, C.crimson, true, false);
+                    this.destroyEffect(robot.x, robot.y + 10, C.gold, true, false);
+                    SFX.destroy(true);
+                    this.cameras.main.shake(500, 0.025);
+                    this.waveCleared = true;
+                    if (this.primeHPBg) { this.primeHPBg.destroy(); this.primeHPBg = null; }
+                    if (this.primeHPFg) { this.primeHPFg.destroy(); this.primeHPFg = null; }
+                    if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
+                    this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
+                    this.time.delayedCall(1400, () => {
+                        saveHS(this.score);
+                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave, score: this.score });
+                    });
+                } else {
+                    const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
+                    robot.setVisible(false);
+                    robot.body.enable = false;
+                    this.destroyEffect(bx, by, C.orange, bf, sf);
+                    SFX.destroy(bf);
+                    this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                }
             } else {
                 // Boss/admin — partial damage, flash orange tint, allow re-stomp after delay
                 robot.setTint(0xff7700);
@@ -2071,8 +2469,9 @@ class PlayScene extends Phaser.Scene {
         }
 
         // ── SIDE COLLISION: union damage ──────────────────────────────────
-        const dmg = robot.isBoss ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
+        const dmg = (robot.isPrime || robot.isBoss) ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
         this.unionPct -= dmg;
+        this.resetCombo();
         SFX.hurt();
         this.cameras.main.shake(110, 0.012);
         this.showPopup(player.x, player.y - 30, '-' + dmg + '%', C.crimsonS);
@@ -2089,6 +2488,19 @@ class PlayScene extends Phaser.Scene {
         this.score += bonus;
         SFX.waveClear();
         saveHS(this.score);
+
+        // Wave 10 victory path (Chronos Prime killed by special power, not strike)
+        if (this.wave === 10) {
+            if (this.primeHPBg) { this.primeHPBg.destroy(); this.primeHPBg = null; }
+            if (this.primeHPFg) { this.primeHPFg.destroy(); this.primeHPFg = null; }
+            if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
+            this.cameras.main.shake(400, 0.02);
+            this.time.delayedCall(1000, () => {
+                this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave, score: this.score });
+            });
+            return;
+        }
+
         const nextWave = this.wave + 1;
 
         this.add.rectangle(W / 2, H / 2, 460, 230, C.dark, 0.93).setDepth(20).setStrokeStyle(1, C.gold);
@@ -2238,6 +2650,76 @@ class PlayScene extends Phaser.Scene {
         }
     }
 }
+
+// ─── PHASER 3.60 FRAME DATA PATCHES ──────────────────────────────────────────
+// Fixes "Cannot read properties of null (reading 'cut')" crash.
+//
+// Root cause (confirmed via call stack):
+//   setText → updateText → setSize → this.data.cut   (Frame.data is null)
+//
+// Two-layer fix so the Phaser minifier's cached internal references can't bypass it:
+//   Layer 1 — patch Frame.prototype.setSize (works when called via prototype chain)
+//   Layer 2 — patch Text.prototype.updateText to pre-init frame.data before
+//             setSize is reached (works even if setSize is called via cached ref)
+
+const _dataInit = () => ({
+    cut:              { x: 0, y: 0, w: 0, h: 0, r: 0, b: 0 },
+    trim:             false,
+    sourceSize:       { w: 0, h: 0 },
+    spriteSourceSize: { w: 0, h: 0 },
+    radius:           0,
+    drawImage:        { x: 0, y: 0, width: 0, height: 0 }
+});
+
+// Layer 1: Frame.prototype.setSize
+(function patchFrameSetSize() {
+    const _orig = Phaser.Textures.Frame.prototype.setSize;
+    if (!_orig) return;
+    Phaser.Textures.Frame.prototype.setSize = function(width, height, x, y) {
+        if (!this.data) { this.data = _dataInit(); }
+        return _orig.call(this, width, height, x, y);
+    };
+})();
+
+// Layer 2: Text.prototype.updateText — fires before Frame.setSize is reached
+// inside updateText, so it catches cached-ref paths the Layer 1 patch misses.
+(function patchTextUpdateText() {
+    const proto = Phaser.GameObjects.Text && Phaser.GameObjects.Text.prototype;
+    if (!proto || !proto.updateText) return;
+    const _orig = proto.updateText;
+    proto.updateText = function() {
+        // Pre-initialize any frame whose data is null before rendering runs
+        if (this.texture && this.texture.frames) {
+            for (const k in this.texture.frames) {
+                const f = this.texture.frames[k];
+                if (f && !f.data) { f.data = _dataInit(); }
+            }
+        }
+        return _orig.call(this);
+    };
+})();
+
+// ─── NULL-FRAME SAFETY PATCH ─────────────────────────────────────────────────
+// Secondary guard: if Texture.prototype.get() returns null, fall back to any
+// available frame rather than propagating null downstream.
+(function patchPhaserNullFrame() {
+    const _origGet = Phaser.Textures.Texture.prototype.get;
+    Phaser.Textures.Texture.prototype.get = function(name) {
+        const frame = _origGet.call(this, name);
+        if (frame === null) {
+            console.error('[DogStrike] NULL TextureFrame: texture="' + this.key +
+                '" name=' + JSON.stringify(name) +
+                ' firstFrame=' + JSON.stringify(this.firstFrame) +
+                ' frameKeys=' + Object.keys(this.frames).join(','));
+            // Emergency fallback: return any existing frame rather than null
+            const fallbackKey = this.firstFrame || Object.keys(this.frames)[0];
+            if (fallbackKey !== undefined && this.frames[fallbackKey]) {
+                return this.frames[fallbackKey];
+            }
+        }
+        return frame;
+    };
+})();
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const config = {
