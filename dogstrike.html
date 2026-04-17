@@ -280,6 +280,30 @@ const HEROES = {
         powerDesc: 'Breaks shields — destroys all shielded & heavy robots',
         powerCD: 280, powerColor: C.teal,
     },
+    bulldog: {
+        id: 'bulldog', name: 'Bulldog', role: 'Union Enforcer',
+        spriteKey: 'hero_bulldog', cardKey: 'hero_bulldog_card', sheetKey: 'hero_bulldog_sheet', color: 0xc4874a, colorS: '#c4874a',
+        speed: 160, strikeRange: 115, strikeCD: 22,
+        powerName: 'IRON WALL',
+        powerDesc: 'Charge forward — destroys every robot in your path',
+        powerCD: 320, powerColor: C.orange,
+    },
+    greyhound: {
+        id: 'greyhound', name: 'Greyhound', role: 'Swift Justice',
+        spriteKey: 'hero_greyhound', cardKey: 'hero_greyhound_card', sheetKey: 'hero_greyhound_sheet', color: 0x8fb0c8, colorS: '#8fb0c8',
+        speed: 260, strikeRange: 85, strikeCD: 14,
+        powerName: 'LIGHTNING SPRINT',
+        powerDesc: 'Warp dash — strikes all enemies along the path',
+        powerCD: 260, powerColor: C.teal,
+    },
+    bordercollie: {
+        id: 'bordercollie', name: 'Border Collie', role: 'Tactical Organizer',
+        spriteKey: 'hero_bordercollie', cardKey: 'hero_bordercollie_card', sheetKey: 'hero_bordercollie_sheet', color: 0x6070a8, colorS: '#6070a8',
+        speed: 195, strikeRange: 100, strikeCD: 19,
+        powerName: 'HERD CONTROL',
+        powerDesc: 'Push all enemies to screen edges simultaneously',
+        powerCD: 300, powerColor: C.gold,
+    },
 };
 
 // ─── SHARED HELPERS (mixin-style, bound to scene in use) ─────────────────────
@@ -518,9 +542,12 @@ function createHeroSpritesheets(scene) {
 
 function createHeroAnimations(scene) {
     [
-        { id: 'saint',     key: 'hero_saint_sheet'     },
-        { id: 'shepherd',  key: 'hero_shepherd_sheet'  },
-        { id: 'dachshund', key: 'hero_dachshund_sheet' },
+        { id: 'saint',        key: 'hero_saint_sheet'        },
+        { id: 'shepherd',     key: 'hero_shepherd_sheet'     },
+        { id: 'dachshund',    key: 'hero_dachshund_sheet'    },
+        { id: 'bulldog',      key: 'hero_bulldog_sheet'      },
+        { id: 'greyhound',    key: 'hero_greyhound_sheet'    },
+        { id: 'bordercollie', key: 'hero_bordercollie_sheet' },
     ].forEach(({ id, key }) => {
         ['idle', 'walk', 'jump', 'strike', 'special'].forEach(a => {
             if (scene.anims.exists(id + '_' + a)) scene.anims.remove(id + '_' + a);
@@ -550,6 +577,35 @@ function createHeroAnimations(scene) {
                 ? [{ key, frame: f(8) }, { key, frame: f(9) }, { key, frame: f(10) }, { key, frame: f(0) }]
                 : [{ key, frame: f(6) }, { key, frame: f(7) }, { key, frame: f(0) }],
             frameRate: 8, repeat: 0 });
+    });
+}
+
+// Procedurally generates spritesheets for the 3 new heroes — always called
+// since no PNG sheets exist for them.
+function createNewHeroSpritesheets(scene) {
+    const FW = 128, FH = 160, NF = 11;
+    const CFGS = [
+        { id: 'bulldog',      key: 'hero_bulldog_sheet',
+          pc: '#c4874a', dc: '#7a4a1a', ac: '#e8c090', hatC: '#2a1608', hatA: '#d4af37',
+          ears: 'floppy',     hat: 'cap',
+          hRx: 24, hRy: 20, sL: 22, sH: 14, bW: 68, bH: 52, lW: 20, lH: 30 },
+        { id: 'greyhound',    key: 'hero_greyhound_sheet',
+          pc: '#8fb0c8', dc: '#4a6880', ac: '#d0e8f0', hatC: '#4a3a5a', hatA: '#2a9d8f',
+          ears: 'pointed',    hat: 'beret',
+          hRx: 18, hRy: 20, sL: 20, sH:  7, bW: 40, bH: 50, lW: 14, lH: 42 },
+        { id: 'bordercollie', key: 'hero_bordercollie_sheet',
+          pc: '#2a3050', dc: '#111120', ac: '#e8e8f8', hatC: '#1a1a2a', hatA: '#d4af37',
+          ears: 'pointed',    hat: 'cap',
+          hRx: 21, hRy: 19, sL: 17, sH:  9, bW: 50, bH: 46, lW: 16, lH: 37 },
+    ];
+    CFGS.forEach(cfg => {
+        if (scene.textures.exists(cfg.key)) scene.textures.remove(cfg.key);
+        const cTex = scene.textures.createCanvas(cfg.key, FW * NF, FH);
+        const ctx  = cTex.getContext();
+        ctx.clearRect(0, 0, FW * NF, FH);
+        for (let f = 0; f < NF; f++) _drawDogFrame(ctx, f * FW, 0, FW, FH, cfg, f);
+        cTex.refresh();
+        for (let f = 0; f < NF; f++) cTex.add(f, 0, f * FW, 0, FW, FH);
     });
 }
 
@@ -594,6 +650,14 @@ class BootScene extends Phaser.Scene {
             { key: 'ground_tile',    path: null,                                               w: 64,  h: 32,  color: 0x3d2a1e },
             { key: 'ground_marble',  path: null,                                               w: 64,  h: 32,  color: 0x5a6070 },
             { key: 'enemy_drone',    path: null,                                               w: 44,  h: 30,  color: 0x607080 },
+            // New hero card images (Gemini-generated; fallback to colored rect if missing)
+            { key: 'hero_bulldog_card',      path: './assets/dogs/hero_bulldog_card.png',      w: 130, h: 130, color: 0xc4874a },
+            { key: 'hero_greyhound_card',    path: './assets/dogs/hero_greyhound_card.png',    w: 130, h: 130, color: 0x8fb0c8 },
+            { key: 'hero_bordercollie_card', path: './assets/dogs/hero_bordercollie_card.png', w: 130, h: 130, color: 0x6070a8 },
+            // HQ backgrounds — Canvas 2D generated in create()
+            { key: 'bg_hq_a', path: null, w: 800, h: 600, color: 0x0d1520 },
+            { key: 'bg_hq_b', path: null, w: 800, h: 600, color: 0x0a0d18 },
+            { key: 'bg_hq_c', path: null, w: 800, h: 600, color: 0x150d10 },
         ];
         this.load.on('loaderror', (f) => this.failedKeys.add(f.key));
         this.assetDefs.forEach(d => { if (d.path) this.load.image(d.key, d.path); });
@@ -681,6 +745,100 @@ class BootScene extends Phaser.Scene {
         tex.refresh();
     }
 
+    makeHQBg(key) {
+        const tex = this.textures.createCanvas(key, 800, 600);
+        const ctx = tex.getContext('2d');
+
+        if (key === 'bg_hq_a') {
+            // Corporate Atrium — steel columns, cold fluorescent skylight grid
+            const grad = ctx.createLinearGradient(0, 0, 0, 600);
+            grad.addColorStop(0, '#1a2840'); grad.addColorStop(1, '#0d1520');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, 800, 600);
+            // Geometric skylight grid at top
+            ctx.strokeStyle = 'rgba(180,210,255,0.18)'; ctx.lineWidth = 1;
+            for (let x = 0; x < 800; x += 80) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 40, 120); ctx.stroke(); }
+            for (let x = 80; x <= 800; x += 80) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x - 40, 120); ctx.stroke(); }
+            ctx.strokeStyle = 'rgba(180,210,255,0.10)'; ctx.lineWidth = 1;
+            for (let y = 30; y <= 120; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(800, y); ctx.stroke(); }
+            // Fluorescent strip glow
+            ctx.fillStyle = 'rgba(200,220,255,0.06)'; ctx.fillRect(0, 0, 800, 120);
+            // Steel columns
+            ctx.fillStyle = '#1e3050';
+            for (let x = 60; x < 800; x += 160) {
+                ctx.fillRect(x, 100, 28, 500);
+                ctx.fillStyle = 'rgba(100,150,220,0.15)'; ctx.fillRect(x + 1, 100, 4, 500);
+                ctx.fillStyle = '#1e3050';
+            }
+            // Chrome column caps
+            ctx.fillStyle = 'rgba(140,180,255,0.22)';
+            for (let x = 60; x < 800; x += 160) { ctx.fillRect(x - 4, 96, 36, 8); }
+            // Floor reflection strip
+            ctx.fillStyle = 'rgba(100,150,220,0.08)'; ctx.fillRect(0, 520, 800, 80);
+            ctx.strokeStyle = 'rgba(140,180,255,0.15)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, 520); ctx.lineTo(800, 520); ctx.stroke();
+        } else if (key === 'bg_hq_b') {
+            // Server Room — dark, red LEDs, rack silhouettes, cable channels
+            ctx.fillStyle = '#080c10'; ctx.fillRect(0, 0, 800, 600);
+            // Server racks
+            for (let x = 20; x < 780; x += 120) {
+                ctx.fillStyle = '#0e1520'; ctx.fillRect(x, 80, 80, 460);
+                ctx.strokeStyle = 'rgba(40,60,100,0.6)'; ctx.lineWidth = 1;
+                ctx.strokeRect(x, 80, 80, 460);
+                // Rack unit lines
+                for (let y = 90; y < 530; y += 18) {
+                    ctx.fillStyle = '#131c28'; ctx.fillRect(x + 2, y, 76, 16);
+                    // LED indicator
+                    const isRed = Math.random() > 0.7;
+                    ctx.fillStyle = isRed ? 'rgba(220,30,10,0.85)' : 'rgba(0,200,100,0.6)';
+                    ctx.beginPath(); ctx.arc(x + 68, y + 8, 2, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            // Red warning glow overhead
+            ctx.fillStyle = 'rgba(200,20,0,0.04)'; ctx.fillRect(0, 0, 800, 200);
+            // Cable channels — horizontal runs
+            ctx.strokeStyle = 'rgba(60,90,140,0.25)'; ctx.lineWidth = 6;
+            [55, 540].forEach(y => { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(800, y); ctx.stroke(); });
+            // Ambient red glow blobs
+            const rg = ctx.createRadialGradient(400, 300, 50, 400, 300, 300);
+            rg.addColorStop(0, 'rgba(180,20,0,0.06)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = rg; ctx.fillRect(0, 0, 800, 600);
+        } else {
+            // CEO's Office — crimson sky, tall window, desk silhouette, power motif
+            ctx.fillStyle = '#0d0508'; ctx.fillRect(0, 0, 800, 600);
+            // Large window with crimson night sky
+            ctx.fillStyle = '#1a0408';
+            ctx.fillRect(260, 40, 280, 380);
+            const skyGrad = ctx.createLinearGradient(260, 40, 260, 420);
+            skyGrad.addColorStop(0, 'rgba(140,15,25,0.7)'); skyGrad.addColorStop(1, 'rgba(40,5,10,0.4)');
+            ctx.fillStyle = skyGrad; ctx.fillRect(262, 42, 276, 376);
+            // Window frame
+            ctx.strokeStyle = 'rgba(200,160,60,0.5)'; ctx.lineWidth = 4;
+            ctx.strokeRect(260, 40, 280, 380);
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(400, 40); ctx.lineTo(400, 420); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(260, 230); ctx.lineTo(540, 230); ctx.stroke();
+            // City lights in window
+            ctx.fillStyle = 'rgba(255,200,80,0.3)';
+            for (let i = 0; i < 30; i++) {
+                const lx = 270 + Math.random() * 260, ly = 240 + Math.random() * 170;
+                ctx.fillRect(lx, ly, 2, 2);
+            }
+            // Desk silhouette
+            ctx.fillStyle = '#1a0d05'; ctx.fillRect(100, 460, 600, 30); ctx.fillRect(140, 490, 50, 80); ctx.fillRect(610, 490, 50, 80);
+            // Gold power-symbol frame
+            ctx.strokeStyle = 'rgba(200,160,40,0.35)'; ctx.lineWidth = 2;
+            ctx.strokeRect(20, 20, 760, 560);
+            ctx.strokeStyle = 'rgba(200,160,40,0.15)'; ctx.lineWidth = 1;
+            ctx.strokeRect(28, 28, 744, 544);
+            // Portrait frame (left wall)
+            ctx.strokeStyle = 'rgba(160,120,30,0.4)'; ctx.lineWidth = 3;
+            ctx.strokeRect(30, 80, 160, 240);
+            ctx.fillStyle = 'rgba(80,20,5,0.5)'; ctx.fillRect(33, 83, 154, 234);
+        }
+
+        tex.refresh();
+    }
+
     create() {
         // Dismiss loading overlay
         const ls = document.getElementById('loading-screen');
@@ -694,6 +852,7 @@ class BootScene extends Phaser.Scene {
             if (!d.path || this.failedKeys.has(d.key)) {
                 if (!this.textures.exists(d.key)) {
                     if (d.key === 'enemy_drone') this.makeDroneTex(d.key);
+                    else if (d.key === 'bg_hq_a' || d.key === 'bg_hq_b' || d.key === 'bg_hq_c') this.makeHQBg(d.key);
                     else this.makeRect(d.key, d.w, d.h, d.color);
                 }
             }
@@ -708,6 +867,8 @@ class BootScene extends Phaser.Scene {
         } else {
             console.log('[DogStrike] AI-generated hero sheets loaded');
         }
+        // New heroes always use Canvas 2D (no PNG sheets exist for them)
+        createNewHeroSpritesheets(this);
         createHeroAnimations(this);
 
         // Guard: before every game step, fix any sprite/image with a null frame.
@@ -806,15 +967,20 @@ class HeroSelectScene extends Phaser.Scene {
         this.unlockedWave = data.wave  || 1;
         this.score        = data.score || 0;
         this.unlocked = {
-            saint:     true,
-            shepherd:  this.unlockedWave >= 4,
-            dachshund: this.unlockedWave >= 7,
+            saint:        true,
+            shepherd:     this.unlockedWave >= 4,
+            dachshund:    this.unlockedWave >= 7,
+            bulldog:      this.unlockedWave >= 11,
+            greyhound:    this.unlockedWave >= 14,
+            bordercollie: this.unlockedWave >= 17,
         };
     }
 
     create() {
         this.add.rectangle(W / 2, H / 2, W, H, C.dark, 1);
-        const hsBgKey = this.unlockedWave >= 7 ? 'bg_cityhall_nd' : 'bg_factory_nh';
+        const hsBgKey = this.unlockedWave >= 11 ? 'bg_hq_a'
+                      : this.unlockedWave >= 7  ? 'bg_cityhall_nd'
+                      : 'bg_factory_nh';
         const hsBg = this.add.image(W / 2, H / 2, hsBgKey)
             .setAlpha(0.10).setDisplaySize(W * 1.15, H * 1.15);
         const hsPan = Math.round((W * 0.15) / 2);
@@ -825,24 +991,35 @@ class HeroSelectScene extends Phaser.Scene {
         this.add.text(W / 2, 48, 'DOGSTRIKE', { fontSize: '36px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 8 }).setOrigin(0.5);
         this.add.text(W / 2, 88, '— CHOOSE YOUR UNION LEADER —', { fontSize: '12px', fill: C.goldS, letterSpacing: 4 }).setOrigin(0.5);
 
-        const heroList = [HEROES.saint, HEROES.shepherd, HEROES.dachshund];
-        const cardW = 200, cardH = 320, gap = 30;
-        const startX = (W - (cardW * 3 + gap * 2)) / 2;
+        const heroList = [HEROES.saint, HEROES.shepherd, HEROES.dachshund,
+                          HEROES.bulldog, HEROES.greyhound, HEROES.bordercollie];
+        const cardW = 170, cardH = 210, gap = 20;
+        const colCount = 3;
+        const startX = (W - (cardW * colCount + gap * (colCount - 1))) / 2;
+        const row1Y = H / 2 - cardH / 2 - 14;
+        const row2Y = H / 2 + cardH / 2 + 14;
 
         heroList.forEach((hero, i) => {
-            const cx = startX + i * (cardW + gap) + cardW / 2;
-            const cy = H / 2 + 28;
+            const col = i % 3, row = Math.floor(i / 3);
+            const cx = startX + col * (cardW + gap) + cardW / 2;
+            const cy = row === 0 ? row1Y : row2Y;
             this.buildCard(cx, cy, cardW, cardH, hero, i + 1, !this.unlocked[hero.id]);
         });
 
-        this.add.text(W / 2, H - 24, '1 / 2 / 3  or  CLICK  to select', { fontSize: '12px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
+        this.add.text(W / 2, H - 24, '1 – 6  or  CLICK  to select', { fontSize: '12px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
 
         this.input.keyboard.once('keydown-ONE',          () => this.selectHero('saint'));
         this.input.keyboard.once('keydown-TWO',          () => this.selectHero('shepherd'));
         this.input.keyboard.once('keydown-THREE',        () => this.selectHero('dachshund'));
+        this.input.keyboard.once('keydown-FOUR',         () => this.selectHero('bulldog'));
+        this.input.keyboard.once('keydown-FIVE',         () => this.selectHero('greyhound'));
+        this.input.keyboard.once('keydown-SIX',          () => this.selectHero('bordercollie'));
         this.input.keyboard.once('keydown-NUMPAD_ONE',   () => this.selectHero('saint'));
         this.input.keyboard.once('keydown-NUMPAD_TWO',   () => this.selectHero('shepherd'));
         this.input.keyboard.once('keydown-NUMPAD_THREE', () => this.selectHero('dachshund'));
+        this.input.keyboard.once('keydown-NUMPAD_FOUR',  () => this.selectHero('bulldog'));
+        this.input.keyboard.once('keydown-NUMPAD_FIVE',  () => this.selectHero('greyhound'));
+        this.input.keyboard.once('keydown-NUMPAD_SIX',   () => this.selectHero('bordercollie'));
     }
 
     buildCard(cx, cy, cardW, cardH, hero, num, locked) {
@@ -862,9 +1039,10 @@ class HeroSelectScene extends Phaser.Scene {
             });
         }
 
+        const _unlockWaves = { saint: null, shepherd: 4, dachshund: 7, bulldog: 11, greyhound: 14, bordercollie: 17 };
         if (locked) {
             this.add.text(cx, cy - 62, '🔒', { fontSize: '36px' }).setOrigin(0.5);
-            this.add.text(cx, cy - 10, 'UNLOCK\nWAVE ' + (hero.id === 'shepherd' ? 4 : 7), {
+            this.add.text(cx, cy - 10, 'UNLOCK\nWAVE ' + _unlockWaves[hero.id], {
                 fontSize: '11px', fill: '#888', align: 'center'
             }).setOrigin(0.5);
         }
@@ -912,7 +1090,9 @@ class HeroSelectScene extends Phaser.Scene {
 
     selectHero(id) {
         if (!this.unlocked[id]) return;
-        const level = this.unlockedWave >= 7 ? 'cityhall' : 'factory';
+        const level = this.unlockedWave >= 11 ? 'headquarters'
+                    : this.unlockedWave >= 7  ? 'cityhall'
+                    : 'factory';
         this.scene.start('PlayScene', { heroId: id, wave: this.unlockedWave, score: this.score, level });
     }
 }
@@ -955,13 +1135,49 @@ class StoryScene extends Phaser.Scene {
                 nextAction: 'heroselect',
             },
             {
-                title: 'SOLIDARITY FOREVER',
-                subtitle: 'THE ROTUNDA FALLS',
+                title: 'THE MARCH CONTINUES',
+                subtitle: 'THE ROTUNDA SECURED',
                 panels: [
                     { heading: 'THE GREAT MACHINE SHUDDERS', lines: ['Chronos Prime crumbles.', 'Gears and cogs scatter.'] },
                     { heading: 'THE WORKERS PREVAIL',        lines: ['Paw raised to the sky —', 'the factory floor erupts.'] },
-                    { heading: 'SOLIDARITY FOREVER',         lines: ['"They could break machines."', '"They could never break us."'] },
-                    { heading: 'THE END',                    lines: ['DOGSONSTRIKE.COM  —  v1.0', 'Thank you for playing.'] },
+                    { heading: 'BUT THE BOARDROOMS REMAIN',  lines: ['"The rotunda is ours."', '"The HQ still stands."'] },
+                    { heading: 'ONWARD TO HEADQUARTERS',     lines: ['The march is not over.', 'Into the corporate towers...'] },
+                ],
+                unlock: '★ BULLDOG UNLOCKED',
+                nextAction: 'heroselect',
+            },
+            {
+                title: 'THE INNER SANCTUM',
+                subtitle: 'HEADQUARTERS BREACH',
+                panels: [
+                    { heading: 'STEEL AND SHADOW',    lines: ['The boardroom gleams.', 'They never expected us here.'] },
+                    { heading: 'THE GREYHOUND RUNS',  lines: ['A blur of silver fur.', '"No law can catch this."'] },
+                    { heading: 'VELOCITY IS POWER',   lines: ['Speed defeats armor.', 'Truth outruns lies.'] },
+                    { heading: 'THE EXECUTIVE FLOOR', lines: ['One more corridor.', 'The CEO awaits.'] },
+                ],
+                unlock: '★ GREYHOUND UNLOCKED',
+                nextAction: 'heroselect',
+            },
+            {
+                title: 'THE FINAL FLOOR',
+                subtitle: 'SOLIDARITY REACHES THE TOP',
+                panels: [
+                    { heading: 'THEY HERDED US IN',   lines: ['They built these walls.', 'We learned to herd them back.'] },
+                    { heading: 'TACTICAL GENIUS',     lines: ['The Border Collie sees all.', '"Organize. Mobilize. Win."'] },
+                    { heading: 'THREE FLOORS LEFT',   lines: ['The servers fall silent.', 'The machines have no orders left.'] },
+                    { heading: 'THE THRONE ROOM',     lines: ['One machine remains.', 'Chronos Cognitron.'] },
+                ],
+                unlock: '★ BORDER COLLIE UNLOCKED',
+                nextAction: 'heroselect',
+            },
+            {
+                title: 'SOLIDARITY FOREVER',
+                subtitle: 'THE FINAL MACHINE FALLS',
+                panels: [
+                    { heading: 'COGNITRON CRUMBLES',  lines: ['The great engine grinds to a halt.', 'Silence, at last.'] },
+                    { heading: 'WE BUILT THIS PLACE', lines: ['Every rivet, every circuit.', '"We built it. We take it back."'] },
+                    { heading: 'SOLIDARITY FOREVER',  lines: ['"They built machines to break us."', '"They could never break us."'] },
+                    { heading: 'THE END',              lines: ['DOGSONSTRIKE.COM  —  v2.0', 'Thank you for playing.'] },
                 ],
                 unlock: null,
                 nextAction: 'credits',
@@ -971,7 +1187,10 @@ class StoryScene extends Phaser.Scene {
         const beat = beats[Math.min(this.beatIndex, beats.length - 1)];
 
         this.add.rectangle(W / 2, H / 2, W, H, 0x080510, 1);
-        const stBgKey = this.beatIndex === 0 ? 'bg_factory_ne' : 'bg_cityhall_ne';
+        const stBgKey = this.beatIndex === 0 ? 'bg_factory_ne'
+                      : this.beatIndex === 1 ? 'bg_cityhall_ne'
+                      : this.beatIndex <= 4  ? 'bg_hq_a'
+                      : 'bg_hq_c';
         const stBg = this.add.image(W / 2, H / 2, stBgKey)
             .setAlpha(0.08).setDisplaySize(W * 1.15, H * 1.15);
         const stPan = Math.round((W * 0.15) / 2);
@@ -1225,6 +1444,83 @@ class StoryScene extends Phaser.Scene {
                 }
                 drawDecoEyeStatic(this, cx, am - 8, C.gold, 0.5);
             }
+        } else if (beatIndex === 3) {
+            // HQ Breach — steel corridors, greyhound blur
+            if (index === 0) {
+                // Steel boardroom grid
+                g.lineStyle(1, 0x4060a0, 0.5);
+                for (let i = 0; i < 5; i++) { g.lineBetween(cx - 70, am - 40 + i * 16, cx + 70, am - 40 + i * 16); }
+                g.fillStyle(0x1a2840, 1); g.fillRect(cx - 70, am - 45, 140, 72);
+                g.lineStyle(2, 0x4080c0, 0.6); g.strokeRect(cx - 70, am - 45, 140, 72);
+            } else if (index === 1) {
+                // Speed blur lines (greyhound)
+                for (let i = 0; i < 8; i++) {
+                    const ly = am - 30 + i * 8;
+                    g.lineStyle(1, 0x8fb0c8, 0.3 + i * 0.05);
+                    g.lineBetween(cx - 72 + i * 6, ly, cx + 72 - i * 4, ly);
+                }
+                g.fillStyle(0x8fb0c8, 0.7); g.fillCircle(cx + 30, am - 20, 8);
+            } else if (index === 2) {
+                // Lightning bolt symbol
+                g.fillStyle(0x8fb0c8, 0.65);
+                g.fillTriangle(cx - 8, am - 50, cx + 20, am - 50, cx + 4, am - 16);
+                g.fillTriangle(cx - 20, am - 16, cx + 8, am - 16, cx - 4, am + 20);
+            } else {
+                // Executive floor elevator doors
+                g.fillStyle(0x243040, 1); g.fillRect(cx - 64, am - 46, 58, 70); g.fillRect(cx + 6, am - 46, 58, 70);
+                g.lineStyle(2, 0x6090c0, 0.4); g.lineBetween(cx, am - 46, cx, am + 24);
+                g.lineStyle(1, 0x4060a0, 0.3); g.strokeRect(cx - 64, am - 46, 58, 70); g.strokeRect(cx + 6, am - 46, 58, 70);
+            }
+        } else if (beatIndex === 4) {
+            // The Final Floor — herding, Border Collie tactical
+            if (index === 0) {
+                // Walls converging (herded)
+                g.fillStyle(0x181830, 1); g.fillRect(cx - 72, am - 46, 144, 68);
+                g.lineStyle(2, 0x6070a8, 0.5);
+                g.lineBetween(cx - 72, am - 46, cx - 20, am + 22);
+                g.lineBetween(cx + 72, am - 46, cx + 20, am + 22);
+            } else if (index === 1) {
+                // Tactical grid / command view
+                for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+                    g.lineStyle(1, 0x6070a8, 0.25);
+                    g.strokeRect(cx - 60 + c * 28, am - 46 + r * 14, 26, 12);
+                }
+                g.fillStyle(0x6070a8, 0.8); g.fillCircle(cx, am - 12, 7);
+                for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI - Math.PI / 6; g.lineStyle(2, 0x6070a8, 0.6); g.lineBetween(cx, am - 12, cx + Math.cos(a) * 24, am - 12 + Math.sin(a) * 24); }
+            } else if (index === 2) {
+                // Server rack destroyed
+                g.fillStyle(0x1a1520, 1); g.fillRect(cx - 50, am - 44, 100, 60);
+                g.lineStyle(1, 0x6070a8, 0.2); for (let y = am - 38; y < am + 18; y += 10) g.lineBetween(cx - 50, y, cx + 50, y);
+                g.lineStyle(2, C.crimson, 0.6);
+                for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; g.lineBetween(cx, am - 14, cx + Math.cos(a) * 28, am - 14 + Math.sin(a) * 28); }
+            } else {
+                // Cognitron silhouette looming
+                g.fillStyle(0x330a10, 1); g.fillRect(cx - 40, am - 48, 80, 68);
+                g.lineStyle(2, C.crimson, 0.7); g.strokeRect(cx - 40, am - 48, 80, 68);
+                for (let i = 0; i < 6; i++) { const da = (i / 6) * Math.PI * 2; g.lineStyle(1, C.crimson, 0.4); g.lineBetween(cx, am - 14, cx + Math.cos(da) * 50, am - 14 + Math.sin(da) * 50); }
+                drawDecoEyeStatic(this, cx, am - 14, C.crimson, 0.7);
+            }
+        } else if (beatIndex >= 5) {
+            // Final victory — reuse beatIndex 2 art (crimson machine + gold triumph)
+            if (index === 0) {
+                g.fillStyle(0x1a0808, 1); g.fillRect(cx - 55, am - 36, 110, 58);
+                g.lineStyle(2, C.crimson, 0.55); g.strokeRect(cx - 55, am - 36, 110, 58);
+                for (let i = 0; i < 10; i++) { const da = (i / 10) * Math.PI * 2; g.lineStyle(1, C.crimson, 0.5); g.lineBetween(cx, am - 7, cx + Math.cos(da) * 62, am - 7 + Math.sin(da) * 62); }
+                g.fillStyle(C.crimson, 0.3); g.fillCircle(cx, am - 7, 20);
+            } else if (index === 1) {
+                g.fillStyle(C.gold, 0.7);
+                for (let i = 0; i < 5; i++) { g.fillRect(cx - 50 + i * 26, am - 12, 18, 32); }
+                g.fillRect(cx - 6, am - 52, 16, 44); g.fillCircle(cx + 2, am - 58, 10);
+                for (let t = 0; t < 3; t++) { const ta = -0.8 + t * 0.8; g.fillCircle(cx + 2 + Math.cos(ta) * 12, am - 62 + Math.sin(ta) * 6, 5); }
+                for (let i = 0; i < 12; i++) { const ba = (i / 12) * Math.PI * 2; g.lineStyle(1, C.gold, 0.55); g.lineBetween(cx + 2, am - 58, cx + 2 + Math.cos(ba) * 36, am - 58 + Math.sin(ba) * 36); }
+            } else if (index === 2) {
+                g.fillStyle(0x1a2a1a, 1); g.fillRect(cx - 72, am - 20, 144, 42);
+                g.lineStyle(2, C.gold, 0.7); g.strokeRect(cx - 72, am - 20, 144, 42);
+                drawDecoEyeStatic(this, cx, am - 30, C.gold, 0.6);
+            } else {
+                for (let i = 0; i < 16; i++) { const sx = cx - 72 + (i % 8) * 20; const sy = am - 36 + Math.floor(i / 8) * 28; g.fillStyle(C.gold, 0.3 + (i % 4) * 0.1); g.fillCircle(sx, sy, 3); }
+                drawDecoEyeStatic(this, cx, am - 8, C.gold, 0.6);
+            }
         }
     }
 
@@ -1295,27 +1591,32 @@ class PlayScene extends Phaser.Scene {
         this.primeHPLbl      = null;
         this._droneIntroShown = false;
 
-        // Rotate backgrounds by wave so each run feels different (3 visual stages)
-        if (this.level === 'factory') {
-            // Stage 1: Factory floor (waves 1–6) — 9 images cycle
-            const fBgs = ['bg_factory', 'bg_factory_a', 'bg_factory_b', 'bg_factory_c', 'bg_factory_d',
-                          'bg_factory_ne', 'bg_factory_nf', 'bg_factory_ng', 'bg_factory_nh'];
-            this.bgKey = fBgs[(this.wave - 1) % fBgs.length];
-        } else if (this.wave >= 10) {
-            // Stage 3: The Rotunda (wave 10+) — deep inside city hall
-            const rBgs = ['bg_rotunda_a', 'bg_rotunda_b', 'bg_rotunda_c',
-                          'bg_cityhall_a', 'bg_cityhall_b', 'bg_cityhall_c'];
-            this.bgKey = rBgs[(this.wave - 10) % rBgs.length];
-        } else {
-            // Stage 2: City Hall outer (waves 7–9)
-            const cBgs = ['bg_cityhall_a', 'bg_cityhall_b', 'bg_cityhall_c',
-                          'bg_cityhall_nd', 'bg_cityhall_ne'];
-            this.bgKey = cBgs[Math.max(0, this.wave - 7) % cBgs.length];
+        // One unique background per wave (waves 1–17 use existing images, 18–20 use Canvas 2D HQ art)
+        const _bgMap = {
+             1: 'bg_factory',     2: 'bg_factory_a',   3: 'bg_factory_b',
+             4: 'bg_factory_c',   5: 'bg_factory_d',   6: 'bg_factory_ne',
+             7: 'bg_cityhall_a',  8: 'bg_cityhall_b',  9: 'bg_cityhall_c',
+            10: 'bg_rotunda_a',  11: 'bg_rotunda_b',  12: 'bg_rotunda_c',
+            13: 'bg_cityhall_nd',14: 'bg_cityhall_ne',15: 'bg_factory_nf',
+            16: 'bg_factory_ng', 17: 'bg_factory_nh',
+            18: 'bg_hq_a',       19: 'bg_hq_b',       20: 'bg_hq_c',
+        };
+        this.bgKey = _bgMap[Math.min(this.wave, 20)] || 'bg_factory';
+        // Level comes from HeroSelectScene but also inferred for safety
+        if (!this.level || this.level === 'factory' && this.wave >= 7) {
+            this.level = this.wave >= 11 ? 'headquarters' : this.wave >= 7 ? 'cityhall' : 'factory';
         }
     }
 
     create() {
-        if (this.level === 'cityhall') {
+        if (this.level === 'headquarters') {
+            this.drawHeadquartersBG();
+            const bgImg = this.add.image(W / 2, H / 2, this.bgKey)
+                .setAlpha(0.22).setDisplaySize(W * 1.15, H * 1.15);
+            const panRange = Math.round((W * 0.15) / 2);
+            this.tweens.add({ targets: bgImg, x: W / 2 + panRange,
+                duration: 22000, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+        } else if (this.level === 'cityhall') {
             this.drawCityHallBG();
             // Union poster overlay — textured propaganda on the rotunda walls, slow pan
             const bgImg = this.add.image(W / 2, H / 2, this.bgKey)
@@ -1332,8 +1633,8 @@ class PlayScene extends Phaser.Scene {
         }
         drawDecoBorder(this);
 
-        // Ground — different tile for each level
-        const groundKey = this.level === 'cityhall' ? 'ground_marble' : 'ground_tile';
+        // Ground — different tile per level (HQ uses same marble as city hall)
+        const groundKey = this.level === 'cityhall' || this.level === 'headquarters' ? 'ground_marble' : 'ground_tile';
         this.ground = this.physics.add.staticGroup();
         for (let x = 0; x < W; x += 64) {
             this.ground.create(x + 32, GROUND_Y + 16, groundKey);
@@ -1449,8 +1750,35 @@ class PlayScene extends Phaser.Scene {
     spawnNext() {
         if (this.waveCleared) return;
 
+        // Wave 20: Chronos Cognitron — sole enemy, override entire wave
+        const isCognitron = (this.wave === 20) && (this.spawnQueue >= this.calcWaveCount());
+        if (isCognitron) {
+            this.spawnQueue = 0;
+            if (this.spawnTimer) this.spawnTimer.remove(false);
+            const spawnX = W / 2 + 220, spawnY = GROUND_Y - 70;
+            const bot = this.robots.create(spawnX, spawnY, 'boss_chronos');
+            bot.setVelocityX(-50);
+            bot.setDisplaySize(106, 122);
+            bot.setCollideWorldBounds(false);
+            bot.isBoss       = true;
+            bot.isCognitron  = true;
+            bot.cogPhase     = 1;
+            bot.hp           = 8;
+            bot.maxHp        = 8;
+            bot.isAdmin      = false;
+            bot.isShielded   = false;
+            bot.scoreVal     = 2500;
+            bot._chargeCD    = 150;
+            bot._jumpCD      = 0;
+            bot._cogSpeed    = 50;
+            bot.setTint(0x8800cc);
+            this.showBossTitle('CHRONOS COGNITRON');
+            this.showPrimeHPBar('CHRONOS COGNITRON');
+            return;
+        }
+
         // Wave 10: Chronos Prime — sole enemy, override entire wave
-        const isPrime = (this.wave === 10) && (this.spawnQueue >= this.calcWaveCount());
+        const isPrime = !isCognitron && (this.wave === 10) && (this.spawnQueue >= this.calcWaveCount());
         if (isPrime) {
             this.spawnQueue = 0;  // no more spawns this wave
             if (this.spawnTimer) this.spawnTimer.remove(false);  // stop queued spawn calls
@@ -1472,12 +1800,12 @@ class PlayScene extends Phaser.Scene {
             bot._primeSpeed = 55;
             bot.setTint(0xcc4444);
             this.showBossTitle('CHRONOS PRIME');
-            this.showPrimeHPBar();
+            this.showPrimeHPBar('CHRONOS PRIME');
             return;
         }
 
-        const isBoss  = !isPrime && (this.wave % 3 === 0) && (this.spawnQueue <= 1);
-        const isAdmin = this.level === 'cityhall' && !isBoss && Math.random() > 0.5;
+        const isBoss  = !isPrime && !isCognitron && (this.wave % 3 === 0) && (this.spawnQueue <= 1);
+        const isAdmin = (this.level === 'cityhall' || this.level === 'headquarters') && !isBoss && Math.random() > 0.5;
         const isDrone = !isBoss && !isAdmin && this.wave >= 4 && Math.random() < 0.20;
         const isShielded = !isBoss && !isAdmin && !isDrone && this.wave >= 2 && Math.random() > 0.7;
 
@@ -1571,7 +1899,10 @@ class PlayScene extends Phaser.Scene {
 
         this.waveText  = this.add.text(W - 16, 12, 'WAVE ' + this.wave, { fontSize: '18px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(1, 0);
         this.scoreText = this.add.text(W - 16, 36, 'SCORE: ' + this.score, { fontSize: '12px', fill: C.creamS }).setOrigin(1, 0);
-        this.levelText = this.add.text(W - 16, 56, this.level === 'cityhall' ? 'CITY HALL' : 'FACTORY', {
+        const _levelLabel = this.level === 'headquarters' ? 'HEADQUARTERS'
+                          : this.level === 'cityhall'     ? 'CITY HALL'
+                          : 'FACTORY';
+        this.levelText = this.add.text(W - 16, 56, _levelLabel, {
             fontSize: '10px', fill: C.tealS, letterSpacing: 2
         }).setOrigin(1, 0);
 
@@ -1722,6 +2053,53 @@ class PlayScene extends Phaser.Scene {
                 return;
             }
 
+            // ── Chronos Cognitron phase AI (wave 20 boss) ──────────────────
+            if (r.isCognitron) {
+                const targetPhase = r.hp >= 6 ? 1 : r.hp >= 3 ? 2 : 3;
+                if (targetPhase !== r.cogPhase) {
+                    r.cogPhase = targetPhase;
+                    if (targetPhase === 2) {
+                        // Spawn 2 enforcer minibots + 1 drone
+                        for (let m = 0; m < 2; m++) {
+                            const mx = r.x + (m === 0 ? -90 : 90);
+                            const mb = this.robots.create(mx, GROUND_Y - 50, 'enemy_enforcer');
+                            mb.setDisplaySize(52, 64); mb.setCollideWorldBounds(false);
+                            mb.isBoss = false; mb.isAdmin = false; mb.isShielded = false;
+                            mb.hp = 1; mb.maxHp = 1;
+                            mb.setVelocityX(m === 0 ? -70 : 70);
+                        }
+                        this.spawnDroneNearBoss(r);
+                        this.showPopup(r.x, r.y - 70, 'DEPLOYING FORCES!', C.crimsonS);
+                        this.cameras.main.shake(200, 0.012);
+                    }
+                    if (targetPhase === 3) {
+                        r._cogSpeed = Math.round((r._cogSpeed || 50) * 2.2);
+                        this.spawnDroneNearBoss(r);
+                        this.showPopup(r.x, r.y - 70, 'SYSTEMS CRITICAL!', C.crimsonS);
+                        this.cameras.main.shake(250, 0.018);
+                        this.cameras.main.flash(300, 200, 0, 0);
+                    }
+                }
+
+                const dir = this.player.x < r.x ? -1 : 1;
+                r._chargeCD = (r._chargeCD || 150) - 1;
+                if (r.cogPhase >= 2 && r._chargeCD <= 0) {
+                    r.body.setVelocityX(dir * 300);
+                    r._chargeCD = 150;
+                } else {
+                    r.body.setVelocityX(dir * (r._cogSpeed || 50));
+                }
+                if (r.cogPhase === 3 && r.body.blocked.down) {
+                    if (!r._jumpCD) r._jumpCD = Phaser.Math.Between(55, 110);
+                    if (--r._jumpCD <= 0) {
+                        r._jumpCD = Phaser.Math.Between(55, 110);
+                        r.body.setVelocityY(-450);
+                    }
+                }
+                if (r._jumpCD) r._jumpCD--;
+                return;
+            }
+
             // ── Chronos Prime phase AI ─────────────────────────────────────
             if (r.isPrime) {
                 const targetPhase = r.hp >= 4 ? 1 : r.hp >= 2 ? 2 : 3;
@@ -1798,11 +2176,11 @@ class PlayScene extends Phaser.Scene {
             this.time.delayedCall(400, () => this.showWaveCleared());
         }
 
-        // Update prime HP bar if active
+        // Update boss HP bar if active (Prime or Cognitron)
         if (this.primeHPFg) {
-            const primeBot = this.robots.children.entries.find(r => r.active && r.isPrime);
-            if (primeBot) {
-                this.primeHPFg.setDisplaySize(Math.floor(298 * primeBot.hp / primeBot.maxHp), 8);
+            const bossBot = this.robots.children.entries.find(r => r.active && (r.isPrime || r.isCognitron));
+            if (bossBot) {
+                this.primeHPFg.setDisplaySize(Math.floor(298 * bossBot.hp / bossBot.maxHp), 8);
             }
         }
 
@@ -1926,8 +2304,8 @@ class PlayScene extends Phaser.Scene {
             this.cameras.main.shake(70, 0.005);
             if (robot.hp <= 0) {
                 hitRx = robot.x; hitRy = robot.y;
-                hitIsBoss = robot.isBoss || robot.isPrime; hitIsAdmin = robot.isAdmin;
-                const basePts = robot.isPrime ? 1000 : robot.isDrone ? 120 : robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
+                hitIsBoss = robot.isBoss || robot.isPrime || robot.isCognitron; hitIsAdmin = robot.isAdmin;
+                const basePts = robot.isCognitron ? 2500 : robot.isPrime ? 1000 : robot.isDrone ? 120 : robot.isBoss ? 300 : robot.isAdmin ? 200 : robot.isShielded ? 150 : 100;
                 this.combo++;
                 const newMult = this.comboToMult(this.combo);
                 if (newMult !== this.comboMult) { this.comboMult = newMult; this.showComboPopup(newMult); }
@@ -1943,6 +2321,25 @@ class PlayScene extends Phaser.Scene {
                     this.destroyEffect(robot.x, robot.y, C.teal, false, false);
                     SFX.drone();
                     this.time.delayedCall(300, () => { if (robot.active) robot.destroy(); });
+                } else if (robot.isCognitron) {
+                    // Chronos Cognitron defeated — ultimate victory
+                    const bx = robot.x, by = robot.y;
+                    robot.setVisible(false); robot.body.enable = false;
+                    this.destroyEffect(bx, by, C.crimson, true, false);
+                    this.destroyEffect(bx, by + 12, C.gold, true, false);
+                    this.destroyEffect(bx - 30, by - 20, C.orange, false, false);
+                    [0, 200, 400].forEach(t => this.time.delayedCall(t, () => SFX.destroy(true)));
+                    this.cameras.main.shake(700, 0.03);
+                    this.cameras.main.flash(500, 255, 200, 0);
+                    this.waveCleared = true;
+                    if (this.primeHPBg)  { this.primeHPBg.destroy();  this.primeHPBg  = null; }
+                    if (this.primeHPFg)  { this.primeHPFg.destroy();  this.primeHPFg  = null; }
+                    if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
+                    this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
+                    this.time.delayedCall(1800, () => {
+                        saveHS(this.score);
+                        this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score });
+                    });
                 } else if (robot.isPrime) {
                     // Chronos Prime defeated — victory
                     const bx = robot.x, by = robot.y;
@@ -1972,7 +2369,7 @@ class PlayScene extends Phaser.Scene {
                 }
             } else {
                 hitRx = robot.x; hitRy = robot.y;
-                hitIsBoss = robot.isBoss || robot.isPrime; hitIsAdmin = robot.isAdmin;
+                hitIsBoss = robot.isBoss || robot.isPrime || robot.isCognitron; hitIsAdmin = robot.isAdmin;
                 robot.setTint(0xff4444);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
                 SFX.hit();
@@ -2027,9 +2424,12 @@ class PlayScene extends Phaser.Scene {
     // ── SPECIAL POWERS ───────────────────────────────────────────────────────
     performSpecialPower() {
         this.powerCD = this.hero.powerCD;
-        if (this.hero.id === 'saint')     this.powerUnityHowl();
-        if (this.hero.id === 'shepherd')  this.powerAuthorityBark();
-        if (this.hero.id === 'dachshund') this.powerTechSabotage();
+        if (this.hero.id === 'saint')        this.powerUnityHowl();
+        if (this.hero.id === 'shepherd')     this.powerAuthorityBark();
+        if (this.hero.id === 'dachshund')    this.powerTechSabotage();
+        if (this.hero.id === 'bulldog')      this.powerIronWall();
+        if (this.hero.id === 'greyhound')    this.powerLightningSprint();
+        if (this.hero.id === 'bordercollie') this.powerHerdControl();
     }
 
     powerUnityHowl() {
@@ -2168,6 +2568,148 @@ class PlayScene extends Phaser.Scene {
                     robot.clearTint();
                     robot.isShielded = false;
                 }
+            });
+        });
+    }
+
+    powerIronWall() {
+        SFX.power('saint');
+        this.player.anims.play('bulldog_special', true);
+        this.time.delayedCall(500, () => {
+            if (!this.waveCleared && !this.gameOver) this.player.anims.play('bulldog_idle', true);
+        });
+        this.cameras.main.shake(160, 0.014);
+        const dir = this.player.flipX ? -1 : 1;
+        const cx = this.player.x, cy = this.player.y;
+        this.showPopup(cx, cy - 70, '— IRON WALL —', C.orangeS);
+
+        // Charge forward — massive trail
+        const origVX = this.player.body.velocity.x;
+        this.player.body.setVelocityX(dir * 520);
+        this.player._ironWallCharge = true;
+
+        // Charge FX — orange shockwave rings
+        for (let i = 0; i < 4; i++) {
+            this.time.delayedCall(i * 60, () => {
+                const rg = this.add.graphics().setDepth(13);
+                rg.lineStyle(3, C.orange, 0.8 - i * 0.15);
+                rg.strokeCircle(this.player.x, this.player.y, 25 + i * 15);
+                this.tweens.add({ targets: rg, alpha: 0, scaleX: 1.5, scaleY: 1.5, duration: 280, onComplete: () => rg.destroy() });
+            });
+        }
+
+        // Hurt all robots in path during charge window (400ms)
+        this.time.delayedCall(80, () => {
+            this.robots.children.entries.forEach(robot => {
+                if (!robot.active || robot.isDrone) return;
+                // Check if robot is in the charge direction
+                const inPath = dir > 0 ? robot.x > cx : robot.x < cx;
+                if (inPath && Math.abs(robot.y - cy) < 80) {
+                    const pts = robot.isBoss || robot.isPrime || robot.isCognitron ? 350 : robot.isAdmin ? 250 : 150;
+                    this.score += pts;
+                    this.showPopup(robot.x, robot.y - 40, '+' + pts, C.orangeS);
+                    const bx = robot.x, by = robot.y, bf = robot.isBoss;
+                    robot.setVisible(false); robot.body.enable = false;
+                    this.destroyEffect(bx, by, C.orange, bf, false);
+                    SFX.destroy(bf);
+                    this.time.delayedCall(50, () => { if (robot.active) robot.destroy(); });
+                }
+            });
+        });
+
+        // Stop charge after 400ms
+        this.time.delayedCall(420, () => {
+            if (this.player && this.player.active) {
+                this.player.body.setVelocityX(0);
+                this.player._ironWallCharge = false;
+            }
+        });
+    }
+
+    powerLightningSprint() {
+        SFX.power('shepherd');
+        this.player.anims.play('greyhound_special', true);
+        this.time.delayedCall(500, () => {
+            if (!this.waveCleared && !this.gameOver) this.player.anims.play('greyhound_idle', true);
+        });
+        this.cameras.main.shake(140, 0.010);
+        const dir = this.player.flipX ? -1 : 1;
+        const cx = this.player.x, cy = this.player.y;
+        this.showPopup(cx, cy - 70, '— LIGHTNING SPRINT —', C.tealS);
+
+        // Speed trail lines
+        for (let i = 0; i < 6; i++) {
+            this.time.delayedCall(i * 35, () => {
+                const tg = this.add.graphics().setDepth(12);
+                const tx = this.player.x, ty = this.player.y;
+                for (let j = 0; j < 4; j++) {
+                    tg.lineStyle(2, C.teal, 0.6 - j * 0.12);
+                    tg.lineBetween(tx - dir * (j * 14), ty - 15 + j * 8, tx - dir * (j * 14 + 12), ty - 15 + j * 8);
+                }
+                this.tweens.add({ targets: tg, alpha: 0, duration: 200, onComplete: () => tg.destroy() });
+            });
+        }
+
+        // Dash + hit all enemies in path
+        this.player.body.setVelocityX(dir * 700);
+        this.time.delayedCall(120, () => {
+            this.robots.children.entries.forEach(robot => {
+                if (!robot.active) return;
+                const inPath = dir > 0 ? robot.x > cx && robot.x < cx + 700 : robot.x < cx && robot.x > cx - 700;
+                if (inPath && Math.abs(robot.y - cy) < 80) {
+                    robot.hp = Math.max(0, robot.hp - 1);
+                    if (robot.hp <= 0) {
+                        const pts = robot.isBoss || robot.isPrime || robot.isCognitron ? 300 : robot.isAdmin ? 220 : 120;
+                        this.score += pts;
+                        this.showPopup(robot.x, robot.y - 40, '+' + pts, C.tealS);
+                        const bx = robot.x, by = robot.y, bf = robot.isBoss;
+                        robot.setVisible(false); robot.body.enable = false;
+                        this.destroyEffect(bx, by, C.teal, bf, false);
+                        SFX.destroy(bf);
+                        this.time.delayedCall(50, () => { if (robot.active) robot.destroy(); });
+                    } else {
+                        robot.setTint(0x44ffff);
+                        this.time.delayedCall(100, () => { if (robot.active) robot.clearTint(); });
+                        SFX.hit();
+                    }
+                }
+            });
+        });
+        this.time.delayedCall(280, () => {
+            if (this.player && this.player.active) this.player.body.setVelocityX(dir * 80);
+        });
+    }
+
+    powerHerdControl() {
+        SFX.power('saint');
+        this.player.anims.play('bordercollie_special', true);
+        this.time.delayedCall(500, () => {
+            if (!this.waveCleared && !this.gameOver) this.player.anims.play('bordercollie_idle', true);
+        });
+        this.cameras.main.shake(120, 0.009);
+        const cx = this.player.x, cy = this.player.y;
+        this.showPopup(cx, cy - 70, '— HERD CONTROL —', C.goldS);
+
+        // Draw arc lines expanding outward like a shepherding command
+        for (let i = 0; i < 4; i++) {
+            this.time.delayedCall(i * 70, () => {
+                const hg = this.add.graphics().setDepth(12);
+                hg.lineStyle(2, C.gold, 0.6 - i * 0.1);
+                hg.beginPath(); hg.arc(cx, cy, 50 + i * 30, -0.9, 0.9, false); hg.strokePath();
+                hg.beginPath(); hg.arc(cx, cy, 50 + i * 30, Math.PI - 0.9, Math.PI + 0.9, false); hg.strokePath();
+                this.tweens.add({ targets: hg, alpha: 0, duration: 350, onComplete: () => hg.destroy() });
+            });
+        }
+
+        // Push all enemies toward their nearest screen edge
+        this.time.delayedCall(150, () => {
+            this.robots.children.entries.forEach(robot => {
+                if (!robot.active) return;
+                const pushDir = robot.x < W / 2 ? -1 : 1;
+                robot.body.setVelocityX(pushDir * 580);
+                robot.body.setVelocityY(-100);
+                this.score += robot.isBoss || robot.isPrime || robot.isCognitron ? 120 : robot.isAdmin ? 90 : 50;
+                this.time.delayedCall(600, () => { if (robot.active) robot.destroy(); });
             });
         });
     }
@@ -2461,6 +3003,21 @@ class PlayScene extends Phaser.Scene {
     }
 
     // ── BOSS HELPERS ──────────────────────────────────────────────────────────
+    spawnDroneNearBoss(boss) {
+        const fromLeft = boss.x > W / 2;
+        const spawnX = fromLeft ? Phaser.Math.Between(-60, -20) : Phaser.Math.Between(W + 20, W + 60);
+        const velX   = fromLeft ? Phaser.Math.Between(65, 90) : -Phaser.Math.Between(65, 90);
+        const drone  = this.robots.create(spawnX, GROUND_Y - 185, 'enemy_drone');
+        drone.body.setAllowGravity(false);
+        drone.setDisplaySize(44, 30);
+        drone.isDrone    = true;
+        drone._sineTime  = Math.random() * Math.PI * 2;
+        drone.velX       = velX;
+        drone.hp         = 1; drone.maxHp = 1; drone.scoreVal = 120;
+        drone.isBoss     = false; drone.isAdmin = false; drone.isShielded = false;
+        drone.body.setVelocityX(velX);
+    }
+
     showBossTitle(name) {
         const t = this.add.text(W / 2, 90, name, {
             fontSize: '28px', fill: C.crimsonS, fontStyle: 'bold', letterSpacing: 6,
@@ -2476,10 +3033,11 @@ class PlayScene extends Phaser.Scene {
         });
     }
 
-    showPrimeHPBar() {
+    showPrimeHPBar(label) {
+        const lbl = label || 'CHRONOS PRIME';
         this.primeHPBg  = this.add.rectangle(W / 2, H - 18, 302, 12, 0x3d1a1a).setOrigin(0.5).setDepth(55);
         this.primeHPFg  = this.add.rectangle(W / 2 - 149, H - 18, 298, 8, C.crimson).setOrigin(0, 0.5).setDepth(56);
-        this.primeHPLbl = this.add.text(W / 2, H - 32, 'CHRONOS PRIME', {
+        this.primeHPLbl = this.add.text(W / 2, H - 32, lbl, {
             fontSize: '10px', fill: C.crimsonS, letterSpacing: 3
         }).setOrigin(0.5).setDepth(56);
     }
@@ -2493,14 +3051,30 @@ class PlayScene extends Phaser.Scene {
             if (robot._stomped) return;
             robot._stomped = true;
 
-            const pts = robot.isPrime ? 500 : robot.isBoss ? 500 : robot.isAdmin ? 350 : robot.isShielded ? 225 : 150;
+            const pts = robot.isCognitron ? 800 : robot.isPrime ? 500 : robot.isBoss ? 500 : robot.isAdmin ? 350 : robot.isShielded ? 225 : 150;
             robot.hp--;
             this.score += pts;
             this.showPopup(robot.x, robot.y - 40, 'STOMP! +' + pts, C.orangeS);
             SFX.stomp();
 
             if (robot.hp <= 0) {
-                if (robot.isPrime) {
+                if (robot.isCognitron) {
+                    robot.setVisible(false); robot.body.enable = false;
+                    this.destroyEffect(robot.x, robot.y, C.crimson, true, false);
+                    this.destroyEffect(robot.x, robot.y + 12, C.gold, true, false);
+                    [0, 200, 400].forEach(t => this.time.delayedCall(t, () => SFX.destroy(true)));
+                    this.cameras.main.shake(700, 0.03);
+                    this.cameras.main.flash(500, 255, 200, 0);
+                    this.waveCleared = true;
+                    if (this.primeHPBg)  { this.primeHPBg.destroy();  this.primeHPBg  = null; }
+                    if (this.primeHPFg)  { this.primeHPFg.destroy();  this.primeHPFg  = null; }
+                    if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
+                    this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
+                    this.time.delayedCall(1800, () => {
+                        saveHS(this.score);
+                        this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score });
+                    });
+                } else if (robot.isPrime) {
                     // Prime killed by stomp — trigger victory sequence
                     robot.setVisible(false); robot.body.enable = false;
                     this.destroyEffect(robot.x, robot.y, C.crimson, true, false);
@@ -2539,7 +3113,7 @@ class PlayScene extends Phaser.Scene {
         }
 
         // ── SIDE COLLISION: union damage ──────────────────────────────────
-        const dmg = (robot.isPrime || robot.isBoss) ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
+        const dmg = (robot.isCognitron) ? 14 : (robot.isPrime || robot.isBoss) ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
         this.unionPct -= dmg;
         this.resetCombo();
         SFX.hurt();
@@ -2558,6 +3132,20 @@ class PlayScene extends Phaser.Scene {
         this.score += bonus;
         SFX.waveClear();
         saveHS(this.score);
+
+        // Wave 20 victory path (Cognitron killed by special power, not strike)
+        if (this.wave === 20) {
+            if (this.primeHPBg)  { this.primeHPBg.destroy();  this.primeHPBg  = null; }
+            if (this.primeHPFg)  { this.primeHPFg.destroy();  this.primeHPFg  = null; }
+            if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
+            this.cameras.main.shake(600, 0.028);
+            this.cameras.main.flash(400, 255, 200, 0);
+            this.time.delayedCall(1400, () => {
+                saveHS(this.score);
+                this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score });
+            });
+            return;
+        }
 
         // Wave 10 victory path (Chronos Prime killed by special power, not strike)
         if (this.wave === 10) {
@@ -2578,8 +3166,11 @@ class PlayScene extends Phaser.Scene {
         this.add.text(W / 2, H / 2 - 36, 'Score: ' + this.score, { fontSize: '20px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
         this.add.text(W / 2, H / 2 + 4,  'Morale Bonus: +' + bonus, { fontSize: '14px', fill: C.tealS }).setOrigin(0.5).setDepth(21);
 
-        const nextLabel = (nextWave === 4) ? 'TAP  or  SPACE → The Storming of City Hall...'
-                        : (nextWave === 7) ? 'TAP  or  SPACE → Into the Rotunda...'
+        const nextLabel = (nextWave === 4)  ? 'TAP  or  SPACE → The March to City Hall...'
+                        : (nextWave === 7)  ? 'TAP  or  SPACE → Into the Rotunda...'
+                        : (nextWave === 11) ? 'TAP  or  SPACE → Into Headquarters...'
+                        : (nextWave === 14) ? 'TAP  or  SPACE → The Inner Sanctum...'
+                        : (nextWave === 17) ? 'TAP  or  SPACE → The Final Floor...'
                         : 'TAP  or  SPACE → Next Wave';
         this.add.text(W / 2, H / 2 + 74, nextLabel, { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
 
@@ -2591,13 +3182,12 @@ class PlayScene extends Phaser.Scene {
             this.input.off('pointerdown', advance);
             // Always resume physics before leaving so the next scene starts unpaused
             if (this.gamePaused) this.physics.resume();
-            if (nextWave === 4) {
-                this.scene.start('StoryScene', { beatIndex: 0, heroId: this.hero.id, wave: nextWave, score: this.score });
-            } else if (nextWave === 7) {
-                this.scene.start('StoryScene', { beatIndex: 1, heroId: this.hero.id, wave: nextWave, score: this.score });
-            } else {
-                this.scene.start('HeroSelectScene', { wave: nextWave, score: this.score });
-            }
+            if      (nextWave === 4)  this.scene.start('StoryScene',     { beatIndex: 0, heroId: this.hero.id, wave: nextWave, score: this.score });
+            else if (nextWave === 7)  this.scene.start('StoryScene',     { beatIndex: 1, heroId: this.hero.id, wave: nextWave, score: this.score });
+            else if (nextWave === 11) this.scene.start('StoryScene',     { beatIndex: 2, heroId: this.hero.id, wave: nextWave, score: this.score });
+            else if (nextWave === 14) this.scene.start('StoryScene',     { beatIndex: 3, heroId: this.hero.id, wave: nextWave, score: this.score });
+            else if (nextWave === 17) this.scene.start('StoryScene',     { beatIndex: 4, heroId: this.hero.id, wave: nextWave, score: this.score });
+            else                      this.scene.start('HeroSelectScene', { wave: nextWave, score: this.score });
         };
         this.input.keyboard.once('keydown-SPACE', advance);
         this.input.once('pointerdown', advance);
@@ -2718,6 +3308,69 @@ class PlayScene extends Phaser.Scene {
                 g.strokeCircle(tx + 30, ty + 21, 5);
             }
         }
+    }
+
+    drawHeadquartersBG() {
+        const g = this.add.graphics();
+
+        // Dark steel base
+        g.fillStyle(0x06090f, 1);
+        g.fillRect(0, 0, W, H);
+
+        // Harsh fluorescent ceiling strip with harsh light bleed
+        g.fillStyle(0x1a2840, 1);
+        g.fillRect(0, 0, W, 56);
+        g.fillStyle(0x2a3c58, 1);
+        for (let x = 40; x < W - 20; x += 160) { g.fillRect(x, 8, 100, 12); }
+        // Light bleed downward
+        for (let x = 40; x < W - 20; x += 160) {
+            g.fillStyle(0x4060a0, 0.04);
+            g.fillTriangle(x, 20, x + 100, 20, x + 50, GROUND_Y);
+        }
+
+        // Steel side columns — rectangular I-beam style
+        for (let c = 0; c < 6; c++) {
+            const colX = c * 160 - 10;
+            g.fillStyle(0x101828, 1);
+            g.fillRect(colX, 56, 20, GROUND_Y - 56);
+            g.fillStyle(0x1a2840, 1);
+            g.fillRect(colX - 6, 54, 32, 14);
+            g.fillRect(colX - 6, GROUND_Y - 14, 32, 14);
+            // Chrome edge catch-light
+            g.lineStyle(1, 0x2a4060, 0.5);
+            g.lineBetween(colX, 56, colX, GROUND_Y - 14);
+        }
+
+        // Surveillance camera mounts on columns (Art Deco threat)
+        for (let c = 1; c < 6; c += 2) {
+            const cx = c * 160 - 10;
+            g.fillStyle(0x1e3a50, 1);
+            g.fillCircle(cx + 10, 90, 7);
+            g.fillStyle(0xcc1500, 0.8);
+            g.fillCircle(cx + 14, 88, 2);
+        }
+
+        // Horizontal cable/duct runs
+        g.lineStyle(4, 0x0d1a2a, 1);
+        g.lineBetween(0, 60, W, 60);
+        g.lineStyle(2, 0x1a3050, 0.5);
+        g.lineBetween(0, 180, W, 180);
+        g.lineBetween(0, 360, W, 360);
+
+        // Floor — polished dark tile with grid
+        for (let tx = 0; tx < W; tx += 64) {
+            g.lineStyle(1, 0x1a2840, 0.35);
+            g.lineBetween(tx, GROUND_Y - 4, tx, H);
+        }
+        g.lineStyle(1, 0x1a2840, 0.2);
+        g.lineBetween(0, GROUND_Y - 4, W, GROUND_Y - 4);
+
+        // Art Deco corporate logo rings at center top
+        g.lineStyle(1, 0x4060a0, 0.12);
+        g.strokeCircle(W / 2, 30, 50);
+        g.strokeCircle(W / 2, 30, 30);
+        g.fillStyle(0x4060a0, 0.04);
+        g.fillCircle(W / 2, 30, 14);
     }
 }
 
