@@ -658,6 +658,15 @@ class BootScene extends Phaser.Scene {
             { key: 'bg_hq_a', path: null, w: 800, h: 600, color: 0x0d1520 },
             { key: 'bg_hq_b', path: null, w: 800, h: 600, color: 0x0a0d18 },
             { key: 'bg_hq_c', path: null, w: 800, h: 600, color: 0x150d10 },
+            // Story panel art — Gemini-generated; fallback to procedural if missing
+            { key: 'story_factory',     path: './assets/story/story_factory.png',     w: 354, h: 132, color: 0x2a1520 },
+            { key: 'story_fight',       path: './assets/story/story_fight.png',       w: 354, h: 132, color: 0x1a1020 },
+            { key: 'story_march',       path: './assets/story/story_march.png',       w: 354, h: 132, color: 0x182028 },
+            { key: 'story_cityhall',    path: './assets/story/story_cityhall.png',    w: 354, h: 132, color: 0x10182a },
+            { key: 'story_hq',          path: './assets/story/story_hq.png',          w: 354, h: 132, color: 0x0d1520 },
+            { key: 'story_solidarity',  path: './assets/story/story_solidarity.png',  w: 354, h: 132, color: 0x281810 },
+            { key: 'story_victory',     path: './assets/story/story_victory.png',     w: 354, h: 132, color: 0x201028 },
+            { key: 'story_boss',        path: './assets/story/story_boss.png',        w: 354, h: 132, color: 0x200810 },
         ];
         this.load.on('loaderror', (f) => this.failedKeys.add(f.key));
         this.assetDefs.forEach(d => { if (d.path) this.load.image(d.key, d.path); });
@@ -1245,19 +1254,45 @@ class StoryScene extends Phaser.Scene {
         g.lineStyle(1, C.gold, 0.18);
         g.strokeRect(cx - pw / 2 + 5, cy - ph / 2 + 5, pw - 10, ph - 10);
 
-        // Art
-        this.drawPanelArt(g, cx, cy, ph, index, beatIndex);
+        // Art area — use Gemini image if available, else procedural
+        const PANEL_IMGS = {
+            '0_0': 'story_factory',  '0_1': 'story_fight',  '0_2': 'story_march',       '0_3': 'story_solidarity',
+            '1_0': 'story_cityhall', '1_1': 'story_fight',  '1_2': 'story_march',       '1_3': 'story_hq',
+            '2_0': 'story_hq',      '2_1': 'story_fight',  '2_2': 'story_march',       '2_3': 'hero_bulldog_card',
+            '3_0': 'story_hq',      '3_1': 'story_cityhall','3_2': 'story_fight',       '3_3': 'hero_greyhound_card',
+            '4_0': 'story_hq',      '4_1': 'story_solidarity','4_2': 'story_fight',     '4_3': 'hero_bordercollie_card',
+            '5_0': 'story_boss',    '5_1': 'story_solidarity','5_2': 'story_march',     '5_3': 'story_victory',
+        };
+        const imgKey = PANEL_IMGS[beatIndex + '_' + index];
+        const artTop = cy - ph / 2 + 30;
+        const artBot = cy + ph / 2 - 50;
+        const artH   = artBot - artTop;
+        const artCy  = artTop + artH / 2;
+        if (imgKey && this.textures.exists(imgKey)) {
+            // Dark fill so fallback-colored rects blend in
+            g.fillStyle(0x080410, 1);
+            g.fillRect(cx - pw / 2 + 7, artTop, pw - 14, artH);
+            const panImg = this.add.image(cx, artCy, imgKey)
+                .setDisplaySize(pw - 14, artH).setDepth(1);
+            // Subtle dark strips at top/bottom for text legibility
+            const ov = this.add.graphics().setDepth(2);
+            ov.fillStyle(0x000000, 0.45);
+            ov.fillRect(cx - pw / 2 + 7, cy - ph / 2 + 7, pw - 14, 26);   // heading strip
+            ov.fillRect(cx - pw / 2 + 7, cy + ph / 2 - 56, pw - 14, 54);  // lines strip
+        } else {
+            this.drawPanelArt(g, cx, cy, ph, index, beatIndex);
+        }
 
-        // Heading
+        // Heading (drawn after image so it's always on top)
         this.add.text(cx, cy - ph / 2 + 16, panel.heading, {
             fontSize: '10px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 2
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(3);
 
         // Lines at bottom
         panel.lines.forEach((line, li) => {
             this.add.text(cx, cy + ph / 2 - 34 + li * 17, line, {
                 fontSize: '10px', fill: C.creamS, fontStyle: 'italic'
-            }).setOrigin(0.5);
+            }).setOrigin(0.5).setDepth(3);
         });
     }
 
@@ -2314,13 +2349,9 @@ class PlayScene extends Phaser.Scene {
                 this.showPopup(robot.x, robot.y - 40, '+' + finalPts, C.goldS);
 
                 if (robot.isDrone) {
-                    // Drone death — zap FX then drop with gravity
-                    robot.isDrone = false;
-                    robot.body.setAllowGravity(true);
-                    robot.body.setVelocityY(60);
-                    this.destroyEffect(robot.x, robot.y, C.teal, false, false);
+                    // Drone death — dramatic explosion with spin/fall
                     SFX.drone();
-                    this.time.delayedCall(300, () => { if (robot.active) robot.destroy(); });
+                    this.droneExplosionFX(robot, robot.x, robot.y);
                 } else if (robot.isCognitron) {
                     // Chronos Cognitron defeated — ultimate victory
                     const bx = robot.x, by = robot.y;
@@ -2357,7 +2388,7 @@ class PlayScene extends Phaser.Scene {
                     this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
                     this.time.delayedCall(1400, () => {
                         saveHS(this.score);
-                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave, score: this.score });
+                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score });
                     });
                 } else {
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
@@ -2962,6 +2993,63 @@ class PlayScene extends Phaser.Scene {
         }
     }
 
+    droneExplosionFX(drone, x, y) {
+        // Layer 1 — bright teal core flash
+        const flash = this.add.graphics().setDepth(15);
+        flash.fillStyle(0xffffff, 0.95);
+        flash.fillCircle(x, y, 14);
+        this.tweens.add({ targets: flash, scaleX: 3.2, scaleY: 3.2, alpha: 0,
+            duration: 100, ease: 'Quad.Out', onComplete: () => flash.destroy() });
+
+        // Layer 2 — 7 spark trails radiating outward
+        this.time.delayedCall(30, () => {
+            const sparks = this.add.graphics().setDepth(15);
+            for (let i = 0; i < 7; i++) {
+                const a = (i / 7) * Math.PI * 2 + Math.random() * 0.4;
+                const len = Phaser.Math.Between(18, 38);
+                sparks.lineStyle(Phaser.Math.Between(1, 2), C.teal, 0.9);
+                sparks.lineBetween(x, y, x + Math.cos(a) * len, y + Math.sin(a) * len);
+                // accent spark in electric white
+                sparks.lineStyle(1, 0xccffff, 0.6);
+                sparks.lineBetween(x, y, x + Math.cos(a + 0.15) * len * 0.6, y + Math.sin(a + 0.15) * len * 0.6);
+            }
+            this.tweens.add({ targets: sparks, scaleX: 2.4, scaleY: 2.4, alpha: 0,
+                duration: 320, ease: 'Quad.Out', onComplete: () => sparks.destroy() });
+        });
+
+        // Layer 3 — two expanding teal rings (staggered)
+        [60, 160].forEach((delay, ri) => {
+            this.time.delayedCall(delay, () => {
+                const ring = this.add.graphics().setDepth(14);
+                ring.lineStyle(ri === 0 ? 3 : 2, C.teal, ri === 0 ? 0.85 : 0.55);
+                ring.strokeCircle(x, y, ri === 0 ? 16 : 22);
+                this.tweens.add({ targets: ring, scaleX: 5.5, scaleY: 5.5, alpha: 0,
+                    duration: 380, ease: 'Expo.Out', onComplete: () => ring.destroy() });
+            });
+        });
+
+        // Layer 4 — drone body spins, drifts, and fades (physics disabled to avoid AI fighting the tween)
+        drone.isDrone = false;
+        drone.body.enable = false;
+        const driftX = Phaser.Math.Between(-55, 55);
+        this.tweens.add({ targets: drone, angle: drone.angle + Phaser.Math.Between(280, 440),
+            x: drone.x + driftX, y: drone.y + 110, duration: 660, ease: 'Quad.In' });
+        this.tweens.add({ targets: drone, alpha: 0, duration: 480, delay: 220,
+            onComplete: () => { if (drone.active) drone.destroy(); } });
+
+        // Debris dots
+        this.time.delayedCall(80, () => {
+            const dots = this.add.graphics().setDepth(15);
+            dots.fillStyle(C.teal, 0.85);
+            for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2;
+                dots.fillCircle(x + Math.cos(a) * 22, y + Math.sin(a) * 22, 4);
+            }
+            this.tweens.add({ targets: dots, scaleX: 2.8, scaleY: 2.8, alpha: 0,
+                duration: 400, ease: 'Cubic.Out', onComplete: () => dots.destroy() });
+        });
+    }
+
     showPopup(x, y, msg, color) {
         const t = this.add.text(x, y, msg, {
             fontSize: '18px', fill: color, fontStyle: 'bold', stroke: '#000', strokeThickness: 3
@@ -3088,7 +3176,7 @@ class PlayScene extends Phaser.Scene {
                     this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
                     this.time.delayedCall(1400, () => {
                         saveHS(this.score);
-                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave, score: this.score });
+                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score });
                     });
                 } else {
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
@@ -3154,7 +3242,7 @@ class PlayScene extends Phaser.Scene {
             if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
             this.cameras.main.shake(400, 0.02);
             this.time.delayedCall(1000, () => {
-                this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave, score: this.score });
+                this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score });
             });
             return;
         }
