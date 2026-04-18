@@ -559,6 +559,27 @@ function createHeroAnimations(scene) {
         const f = n => tex.has(n) ? n : 0;
         console.log('[DogStrike] ' + key + ' frameTotal=' + tex.frameTotal);
 
+        // ── Bulldog 6-frame PNG walk cycle — custom frame mapping ────────────
+        if (id === 'bulldog' && !tex.has(6)) {
+            // All 6 frames are locomotion poses; map them to game animation slots
+            scene.anims.create({ key: 'bulldog_idle',
+                frames: [{ key, frame: 0 }, { key, frame: 5 }],
+                frameRate: 2, repeat: -1 });
+            scene.anims.create({ key: 'bulldog_walk',
+                frames: [0, 1, 2, 3, 4, 5].map(n => ({ key, frame: n })),
+                frameRate: 10, repeat: -1 });
+            scene.anims.create({ key: 'bulldog_jump',
+                frames: [{ key, frame: 2 }], frameRate: 1, repeat: 0 });
+            scene.anims.create({ key: 'bulldog_strike',
+                frames: [{ key, frame: 1 }, { key, frame: 0 }],
+                frameRate: 14, repeat: 0 });
+            scene.anims.create({ key: 'bulldog_special',
+                frames: [3, 4, 5, 0].map(n => ({ key, frame: n })),
+                frameRate: 8, repeat: 0 });
+            return;
+        }
+        // ── Generic 11-frame definitions (all other heroes) ──────────────────
+
         scene.anims.create({ key: id + '_idle',
             frames: [{ key, frame: f(0) }, { key, frame: f(1) }],
             frameRate: 2, repeat: -1 });
@@ -582,7 +603,7 @@ function createHeroAnimations(scene) {
 
 // Procedurally generates spritesheets for the 3 new heroes — always called
 // since no PNG sheets exist for them.
-function createNewHeroSpritesheets(scene) {
+function createNewHeroSpritesheets(scene, skipBulldog = false) {
     const FW = 128, FH = 160, NF = 11;
     const CFGS = [
         { id: 'bulldog',      key: 'hero_bulldog_sheet',
@@ -599,6 +620,7 @@ function createNewHeroSpritesheets(scene) {
           hRx: 21, hRy: 19, sL: 17, sH:  9, bW: 50, bH: 46, lW: 16, lH: 37 },
     ];
     CFGS.forEach(cfg => {
+        if (skipBulldog && cfg.id === 'bulldog') return;  // PNG sheet already loaded
         if (scene.textures.exists(cfg.key)) scene.textures.remove(cfg.key);
         const cTex = scene.textures.createCanvas(cfg.key, FW * NF, FH);
         const ctx  = cTex.getContext();
@@ -679,6 +701,11 @@ class BootScene extends Phaser.Scene {
             { key: 'hero_dachshund_sheet', path: './assets/dogs/hero_dachshund_sheet.png' },
         ].forEach(s => {
             this.load.spritesheet(s.key, s.path, { frameWidth: 128, frameHeight: 160 });
+        });
+        // Bulldog real PNG sheet — 6-frame walk cycle, 341×279 per frame
+        // Falls back to Canvas 2D if file is missing (see create())
+        this.load.spritesheet('hero_bulldog_sheet', './assets/dogs/hero_bulldog_sheet.png', {
+            frameWidth: 341, frameHeight: 279
         });
     }
 
@@ -876,8 +903,10 @@ class BootScene extends Phaser.Scene {
         } else {
             console.log('[DogStrike] AI-generated hero sheets loaded');
         }
-        // New heroes always use Canvas 2D (no PNG sheets exist for them)
-        createNewHeroSpritesheets(this);
+        // Bulldog has a real PNG sheet — skip Canvas 2D for it if the load succeeded
+        const bulldogPNGLoaded = !this.failedKeys.has('hero_bulldog_sheet')
+            && this.textures.exists('hero_bulldog_sheet');
+        createNewHeroSpritesheets(this, bulldogPNGLoaded);
         createHeroAnimations(this);
 
         // Guard: before every game step, fix any sprite/image with a null frame.
@@ -1677,7 +1706,10 @@ class PlayScene extends Phaser.Scene {
 
         this.player = this.physics.add.sprite(144, GROUND_Y - 60, this.hero.sheetKey, 0);
         this.player.setCollideWorldBounds(true);
-        this.player.setDisplaySize(60, 80);
+        // Bulldog PNG frames are 341×279 (wider than tall) — use matching aspect ratio
+        const pW = (this.hero.id === 'bulldog') ? 80 : 60;
+        const pH = (this.hero.id === 'bulldog') ? 66 : 80;
+        this.player.setDisplaySize(pW, pH);
         // Store base scales so animation tweens can multiply from the correct baseline
         this.player._bsx = this.player.scaleX;
         this.player._bsy = this.player.scaleY;
