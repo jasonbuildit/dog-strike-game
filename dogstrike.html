@@ -2362,6 +2362,7 @@ class PlayScene extends Phaser.Scene {
             if (robot.isDrone && this.player.y > GROUND_Y - 110) return;
             if (robot.isShielded && this.hero.id !== 'dachshund') {
                 this.showPopup(robot.x, robot.y - 30, 'SHIELDED', C.tealS);
+                this.enemyHitFX(robot.x, robot.y, C.teal);
                 this.cameras.main.shake(40, 0.003);
                 SFX.shield();
                 this.resetCombo();
@@ -2433,6 +2434,7 @@ class PlayScene extends Phaser.Scene {
             } else {
                 hitRx = robot.x; hitRy = robot.y;
                 hitIsBoss = robot.isBoss || robot.isPrime || robot.isCognitron; hitIsAdmin = robot.isAdmin;
+                this.enemyHitFX(robot.x, robot.y, this.hero.color);
                 robot.setTint(0xff4444);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
                 SFX.hit();
@@ -2731,6 +2733,7 @@ class PlayScene extends Phaser.Scene {
                         SFX.destroy(bf);
                         this.time.delayedCall(50, () => { if (robot.active) robot.destroy(); });
                     } else {
+                        this.enemyHitFX(robot.x, robot.y, C.teal);
                         robot.setTint(0x44ffff);
                         this.time.delayedCall(100, () => { if (robot.active) robot.clearTint(); });
                         SFX.hit();
@@ -3082,6 +3085,37 @@ class PlayScene extends Phaser.Scene {
         });
     }
 
+    enemyHitFX(x, y, color) {
+        // Layer 1 — white core flash (immediate)
+        const flash = this.add.graphics().setDepth(15);
+        flash.fillStyle(0xffffff, 0.85);
+        flash.fillCircle(x, y, 10);
+        this.tweens.add({ targets: flash, scaleX: 2.8, scaleY: 2.8, alpha: 0,
+            duration: 90, ease: 'Quad.Out', onComplete: () => flash.destroy() });
+
+        // Layer 2 — 4 impact sparks (20ms)
+        this.time.delayedCall(20, () => {
+            const sparks = this.add.graphics().setDepth(15);
+            for (let i = 0; i < 4; i++) {
+                const a = (i / 4) * Math.PI * 2 + Math.random() * 0.5;
+                const len = Phaser.Math.Between(12, 26);
+                sparks.lineStyle(Phaser.Math.Between(1, 2), color, 0.85);
+                sparks.lineBetween(x, y, x + Math.cos(a) * len, y + Math.sin(a) * len);
+            }
+            this.tweens.add({ targets: sparks, scaleX: 2.0, scaleY: 2.0, alpha: 0,
+                duration: 210, ease: 'Quad.Out', onComplete: () => sparks.destroy() });
+        });
+
+        // Layer 3 — expanding ring (40ms)
+        this.time.delayedCall(40, () => {
+            const ring = this.add.graphics().setDepth(14);
+            ring.lineStyle(2, color, 0.7);
+            ring.strokeCircle(x, y, 12);
+            this.tweens.add({ targets: ring, scaleX: 3.5, scaleY: 3.5, alpha: 0,
+                duration: 230, ease: 'Expo.Out', onComplete: () => ring.destroy() });
+        });
+    }
+
     showPopup(x, y, msg, color) {
         const t = this.add.text(x, y, msg, {
             fontSize: '18px', fill: color, fontStyle: 'bold', stroke: '#000', strokeThickness: 3
@@ -3220,6 +3254,7 @@ class PlayScene extends Phaser.Scene {
                 }
             } else {
                 // Boss/admin — partial damage, flash orange tint, allow re-stomp after delay
+                this.enemyHitFX(robot.x, robot.y, this.hero.color);
                 robot.setTint(0xff7700);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
                 this.time.delayedCall(400, () => { if (robot.active) robot._stomped = false; });
