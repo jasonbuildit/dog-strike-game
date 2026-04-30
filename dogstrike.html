@@ -2425,11 +2425,9 @@ class PlayScene extends Phaser.Scene {
                     });
                 } else {
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
-                    robot.setVisible(false);
-                    robot.body.enable = false;
                     this.destroyEffect(bx, by, C.gold, bf, sf);
                     SFX.destroy(bf);
-                    this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                    this.enemyDefeatFX(robot);
                 }
             } else {
                 hitRx = robot.x; hitRy = robot.y;
@@ -2536,11 +2534,9 @@ class PlayScene extends Phaser.Scene {
                 this.score += pts;
                 this.showPopup(robot.x, robot.y - 40, '+' + pts, C.goldS);
                 const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
-                robot.setVisible(false);
-                robot.body.enable = false;
                 this.destroyEffect(bx, by, C.gold, bf, sf);
                 SFX.destroy(bf);
-                this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                this.enemyDefeatFX(robot);
             });
         });
     }
@@ -2624,11 +2620,9 @@ class PlayScene extends Phaser.Scene {
                     this.score += pts;
                     this.showPopup(robot.x, robot.y - 40, '+' + pts, C.tealS);
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
-                    robot.setVisible(false);
-                    robot.body.enable = false;
                     this.destroyEffect(bx, by, C.teal, bf, sf);
                     SFX.destroy(bf);
-                    this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                    this.enemyDefeatFX(robot);
                 } else {
                     robot.clearTint();
                     robot.isShielded = false;
@@ -2674,10 +2668,9 @@ class PlayScene extends Phaser.Scene {
                     this.score += pts;
                     this.showPopup(robot.x, robot.y - 40, '+' + pts, C.orangeS);
                     const bx = robot.x, by = robot.y, bf = robot.isBoss;
-                    robot.setVisible(false); robot.body.enable = false;
                     this.destroyEffect(bx, by, C.orange, bf, false);
                     SFX.destroy(bf);
-                    this.time.delayedCall(50, () => { if (robot.active) robot.destroy(); });
+                    this.enemyDefeatFX(robot);
                 }
             });
         });
@@ -2728,10 +2721,9 @@ class PlayScene extends Phaser.Scene {
                         this.score += pts;
                         this.showPopup(robot.x, robot.y - 40, '+' + pts, C.tealS);
                         const bx = robot.x, by = robot.y, bf = robot.isBoss;
-                        robot.setVisible(false); robot.body.enable = false;
                         this.destroyEffect(bx, by, C.teal, bf, false);
                         SFX.destroy(bf);
-                        this.time.delayedCall(50, () => { if (robot.active) robot.destroy(); });
+                        this.enemyDefeatFX(robot);
                     } else {
                         this.enemyHitFX(robot.x, robot.y, C.teal);
                         robot.setTint(0x44ffff);
@@ -3085,6 +3077,23 @@ class PlayScene extends Phaser.Scene {
         });
     }
 
+    enemyDefeatFX(robot) {
+        robot.body.enable = false;
+        const driftX = Phaser.Math.Between(-50, 50);
+        const spinDir = Math.random() < 0.5 ? 1 : -1;
+        this.tweens.add({
+            targets: robot,
+            angle: robot.angle + spinDir * Phaser.Math.Between(220, 380),
+            x: robot.x + driftX,
+            y: robot.y + Phaser.Math.Between(80, 120),
+            duration: 580, ease: 'Quad.In'
+        });
+        this.tweens.add({
+            targets: robot, alpha: 0, duration: 380, delay: 200,
+            onComplete: () => { if (robot.active) robot.destroy(); }
+        });
+    }
+
     enemyHitFX(x, y, color) {
         // Layer 1 — white core flash (immediate)
         const flash = this.add.graphics().setDepth(15);
@@ -3246,11 +3255,9 @@ class PlayScene extends Phaser.Scene {
                     });
                 } else {
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
-                    robot.setVisible(false);
-                    robot.body.enable = false;
                     this.destroyEffect(bx, by, C.orange, bf, sf);
                     SFX.destroy(bf);
-                    this.time.delayedCall(bf ? 100 : 50, () => { if (robot.active) robot.destroy(); });
+                    this.enemyDefeatFX(robot);
                 }
             } else {
                 // Boss/admin — partial damage, flash orange tint, allow re-stomp after delay
