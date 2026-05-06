@@ -254,6 +254,62 @@ const HS_KEY = 'dogstrike_hs';
 function getHS()   { return parseInt(localStorage.getItem(HS_KEY) || '0', 10); }
 function saveHS(s) { if (s > getHS()) localStorage.setItem(HS_KEY, String(s)); }
 
+const PROGRESS_KEY = 'dogstrike_progress';
+const HERO_UNLOCK_WAVES = {
+    saint: 1, shepherd: 4, dachshund: 7, bulldog: 11, greyhound: 14, bordercollie: 17,
+};
+function getUnlockedHeroesForWave(wave) {
+    const out = {};
+    Object.keys(HERO_UNLOCK_WAVES).forEach(id => { out[id] = wave >= HERO_UNLOCK_WAVES[id]; });
+    return out;
+}
+function getProgress() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+        const highestWave = Math.max(1, Math.min(20, parseInt(raw.highestWave || '1', 10)));
+        return { highestWave, unlockedHeroes: getUnlockedHeroesForWave(highestWave) };
+    } catch (e) {
+        return { highestWave: 1, unlockedHeroes: getUnlockedHeroesForWave(1) };
+    }
+}
+function saveProgressForWave(wave) {
+    const progress = getProgress();
+    const highestWave = Math.max(progress.highestWave, Math.max(1, Math.min(20, wave)));
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify({
+        highestWave,
+        unlockedHeroes: getUnlockedHeroesForWave(highestWave),
+    }));
+}
+
+const UPGRADE_DEFS = {
+    longer_strike: {
+        id: 'longer_strike', name: 'LONGER STRIKE', short: '+RANGE',
+        desc: 'Strike range +20',
+    },
+    quick_special: {
+        id: 'quick_special', name: 'QUICK SPECIAL', short: 'FAST POWER',
+        desc: 'Special cooldown is 15% faster',
+    },
+    shield_cracker: {
+        id: 'shield_cracker', name: 'SHIELD CRACKER', short: 'CRACK',
+        desc: 'First strike cracks shields',
+    },
+    union_momentum: {
+        id: 'union_momentum', name: 'UNION MOMENTUM', short: '+BONUS',
+        desc: 'Wave morale bonus +10%',
+    },
+    second_wind: {
+        id: 'second_wind', name: 'SECOND WIND', short: 'SAVE',
+        desc: 'Ignore one collision per wave',
+    },
+};
+function applyUpgradeMods(hero, upgrades) {
+    const h = Object.assign({}, hero);
+    if (upgrades.includes('longer_strike')) h.strikeRange += 20;
+    if (upgrades.includes('quick_special')) h.powerCD = Math.max(120, Math.round(h.powerCD * 0.85));
+    return h;
+}
+
 // ─── HERO DEFINITIONS ────────────────────────────────────────────────────────
 const HEROES = {
     saint: {
@@ -1004,14 +1060,10 @@ class HeroSelectScene extends Phaser.Scene {
     init(data) {
         this.unlockedWave = data.wave  || 1;
         this.score        = data.score || 0;
-        this.unlocked = {
-            saint:        true,
-            shepherd:     this.unlockedWave >= 4,
-            dachshund:    this.unlockedWave >= 7,
-            bulldog:      this.unlockedWave >= 11,
-            greyhound:    this.unlockedWave >= 14,
-            bordercollie: this.unlockedWave >= 17,
-        };
+        this.upgrades     = Array.isArray(data.upgrades) ? data.upgrades : [];
+        const progress = getProgress();
+        this.progressWave = Math.max(this.unlockedWave, progress.highestWave);
+        this.unlocked = getUnlockedHeroesForWave(this.progressWave);
     }
 
     create() {
@@ -1044,7 +1096,10 @@ class HeroSelectScene extends Phaser.Scene {
             this.buildCard(cx, cy, cardW, cardH, hero, i + 1, !this.unlocked[hero.id]);
         });
 
-        this.add.text(W / 2, H - 24, '1 – 6  or  CLICK  to select', { fontSize: '12px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
+        const runText = this.upgrades.length
+            ? '1 – 6 / CLICK   |   UPGRADES: ' + this.upgrades.map(id => UPGRADE_DEFS[id]?.short || id).join('  |  ')
+            : '1 – 6  or  CLICK  to select';
+        this.add.text(W / 2, H - 24, runText, { fontSize: '12px', fill: C.goldS, letterSpacing: 2 }).setOrigin(0.5);
 
         this.input.keyboard.once('keydown-ONE',          () => this.selectHero('saint'));
         this.input.keyboard.once('keydown-TWO',          () => this.selectHero('shepherd'));
@@ -1102,6 +1157,20 @@ class HeroSelectScene extends Phaser.Scene {
             this.add.text(cx, cy + 78 + li * 16, line, { fontSize: '10px', fill: locked ? '#333' : '#aaa', align: 'center' }).setOrigin(0.5);
         });
 
+        if (!locked) {
+            const stats = [
+                ['SPD', Math.min(1, hero.speed / 280), hero.color],
+                ['RNG', Math.min(1, hero.strikeRange / 130), C.gold],
+                ['CD',  Math.min(1, (28 - hero.strikeCD) / 16), C.teal],
+            ];
+            stats.forEach((s, si) => {
+                const y = cy - 103 + si * 9;
+                this.add.text(cx + 24, y, s[0], { fontSize: '7px', fill: C.creamS }).setOrigin(0, 0.5);
+                this.add.rectangle(cx + 48, y, 44, 4, 0x2b2230, 1).setOrigin(0, 0.5);
+                this.add.rectangle(cx + 48, y, Math.max(4, Math.round(44 * s[1])), 4, s[2], 0.9).setOrigin(0, 0.5);
+            });
+        }
+
         this.add.text(cx, cy + cardH / 2 - 22, locked ? '—' : '[' + num + ']', {
             fontSize: '18px', fill: locked ? '#333' : C.goldS
         }).setOrigin(0.5);
@@ -1131,7 +1200,7 @@ class HeroSelectScene extends Phaser.Scene {
         const level = this.unlockedWave >= 11 ? 'headquarters'
                     : this.unlockedWave >= 7  ? 'cityhall'
                     : 'factory';
-        this.scene.start('PlayScene', { heroId: id, wave: this.unlockedWave, score: this.score, level });
+        this.scene.start('PlayScene', { heroId: id, wave: this.unlockedWave, score: this.score, level, upgrades: this.upgrades });
     }
 }
 
@@ -1144,6 +1213,7 @@ class StoryScene extends Phaser.Scene {
         this.heroId    = data.heroId    || 'saint';
         this.wave      = data.wave      || 1;
         this.score     = data.score     || 0;
+        this.upgrades  = Array.isArray(data.upgrades) ? data.upgrades : [];
     }
 
     create() {
@@ -1268,7 +1338,7 @@ class StoryScene extends Phaser.Scene {
             if (beat.nextAction === 'credits') {
                 this.showCredits();
             } else {
-                this.scene.start('HeroSelectScene', { wave: this.wave, score: this.score });
+                this.scene.start('HeroSelectScene', { wave: this.wave, score: this.score, upgrades: this.upgrades });
             }
         };
         this.input.keyboard.once('keydown-SPACE', go);
@@ -1637,7 +1707,9 @@ class PlayScene extends Phaser.Scene {
     constructor() { super('PlayScene'); }
 
     init(data) {
-        this.hero        = HEROES[data.heroId || 'saint'];
+        this.upgrades    = Array.isArray(data.upgrades) ? data.upgrades : [];
+        this.baseHero    = HEROES[data.heroId || 'saint'];
+        this.hero        = applyUpgradeMods(this.baseHero, this.upgrades);
         this.wave        = data.wave   || 1;
         this.score       = data.score  || 0;
         this.level       = data.level  || 'factory';
@@ -1654,6 +1726,7 @@ class PlayScene extends Phaser.Scene {
         this.primeHPFg       = null;
         this.primeHPLbl      = null;
         this._droneIntroShown = false;
+        this.secondWindReady  = this.upgrades.includes('second_wind');
 
         // One unique background per wave (waves 1–17 use existing images, 18–20 use Canvas 2D HQ art)
         const _bgMap = {
@@ -1740,6 +1813,7 @@ class PlayScene extends Phaser.Scene {
         });
 
         this.buildUI();
+        this.showWaveStartCallout();
 
         this.cursors    = this.input.keyboard.createCursorKeys();
         this.strikeKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -1760,8 +1834,16 @@ class PlayScene extends Phaser.Scene {
         this.pauseSubText  = null;
 
         // Tap anywhere to resume when paused
-        this.input.on('pointerdown', () => {
-            if (this.gamePaused && !this.gameOver && !this.waveCleared) this.togglePause();
+        this.input.on('pointerdown', (pointer) => {
+            if (this.gamePaused && !this.gameOver && !this.waveCleared) {
+                this.togglePause();
+                return;
+            }
+            if (this.sys.game.device.input.touch && !this.gameOver && !this.waveCleared
+                && this.time.now - (this._lastControlPointerTime || 0) > 80
+                && pointer.x > W / 2 && pointer.y < H - 92) {
+                this.touch.strikeFired = true;
+            }
         });
 
         // Animation state
@@ -1774,6 +1856,30 @@ class PlayScene extends Phaser.Scene {
     }
 
     calcWaveCount() { return Math.min(3 + this.wave * 2, 20); }
+
+    getWaveObjective() {
+        if (this.wave === 20) return 'FINAL MACHINE';
+        if (this.wave === 10) return 'CHRONOS PRIME';
+        if (this.wave % 3 === 0) return 'BOSS WAVE';
+        if (this.wave >= 17) return 'FINAL FLOOR';
+        if (this.wave >= 11) return 'BREACH HEADQUARTERS';
+        if (this.wave >= 7) return 'SECURE CITY HALL';
+        if (this.wave >= 4) return 'DRONES INBOUND';
+        return 'HOLD THE LINE';
+    }
+
+    showWaveStartCallout() {
+        const box = this.add.rectangle(W / 2, 104, 380, 74, 0x080510, 0.84)
+            .setDepth(58).setStrokeStyle(1, C.gold);
+        const title = this.add.text(W / 2, 88, 'WAVE ' + this.wave, {
+            fontSize: '20px', fill: C.goldS, fontStyle: 'bold', letterSpacing: 5
+        }).setOrigin(0.5).setDepth(59);
+        const sub = this.add.text(W / 2, 116, this.getWaveObjective(), {
+            fontSize: '12px', fill: C.tealS, letterSpacing: 3
+        }).setOrigin(0.5).setDepth(59);
+        this.tweens.add({ targets: [box, title, sub], alpha: 0, delay: 1300, duration: 300,
+            onComplete: () => { box.destroy(); title.destroy(); sub.destroy(); } });
+    }
 
     getBeltDefs() {
         return [
@@ -1946,7 +2052,10 @@ class PlayScene extends Phaser.Scene {
             bot.isShielded = isShielded || isAdmin;  // admins always shielded
             bot.hp         = isBoss ? 3 : (isAdmin || isShielded) ? 2 : 1;
             bot.maxHp      = bot.hp;
-            if (bot.isShielded) bot.setTint(isAdmin ? 0x88aaff : 0x44aaff);
+            if (bot.isShielded) {
+                bot.setTint(isAdmin ? 0x88aaff : 0x44aaff);
+                this.attachShieldFX(bot);
+            }
         }
         bot.setCollideWorldBounds(false);
         this.spawnQueue--;
@@ -2032,9 +2141,8 @@ class PlayScene extends Phaser.Scene {
         this.waveText.setText('WAVE ' + this.wave);
         this.scoreText.setText('SCORE: ' + this.score);
         const alive = this.robots.countActive(true);
-        this.remainText.setText(this.spawnQueue > 0
-            ? this.spawnQueue + ' incoming + ' + alive + ' active'
-            : alive + ' remaining');
+        const totalLeft = this.spawnQueue + alive;
+        this.remainText.setText('ROBOTS: ' + totalLeft + '  (' + alive + ' active / ' + this.spawnQueue + ' queued)');
 
         // Update ★ power touch button to show cooldown
         if (this.touchPowerLabel) {
@@ -2082,13 +2190,17 @@ class PlayScene extends Phaser.Scene {
         }
 
         if (this.strikeCD > 0) this.strikeCD--;
-        if ((Phaser.Input.Keyboard.JustDown(this.strikeKey) || this.touch.strikeFired) && this.strikeCD === 0) {
+        const touchStrike = this.touch.strikeFired;
+        if ((Phaser.Input.Keyboard.JustDown(this.strikeKey) || touchStrike) && this.strikeCD === 0) {
+            if (touchStrike) this.faceNearestEnemy(this.hero.strikeRange + 90);
             this.touch.strikeFired = false;
             this.performStrike();
         }
 
         if (this.powerCD > 0) this.powerCD--;
-        if ((Phaser.Input.Keyboard.JustDown(this.powerKey) || this.touch.powerFired) && this.powerCD === 0) {
+        const touchPower = this.touch.powerFired;
+        if ((Phaser.Input.Keyboard.JustDown(this.powerKey) || touchPower) && this.powerCD === 0) {
+            if (touchPower) this.faceNearestEnemy(W);
             this.touch.powerFired = false;
             this.performSpecialPower();
         }
@@ -2110,6 +2222,7 @@ class PlayScene extends Phaser.Scene {
         // Robot AI: belt push + occasional platform jump
         this.robots.children.entries.forEach(r => {
             if (!r.active) return;
+            if (r._shieldRing) r._shieldRing.setPosition(r.x, r.y);
 
             // ── Drone AI: sine-wave flight ─────────────────────────────────
             if (r.isDrone) {
@@ -2323,6 +2436,51 @@ class PlayScene extends Phaser.Scene {
         });
     }
 
+    hasUpgrade(id) { return this.upgrades.includes(id); }
+
+    attachShieldFX(robot) {
+        if (!robot || !robot.active || robot._shieldRing) return;
+        const ring = this.add.ellipse(robot.x, robot.y, robot.isAdmin ? 82 : 72, robot.isAdmin ? 96 : 82)
+            .setDepth(7).setStrokeStyle(2, robot.isAdmin ? 0x88aaff : C.teal, 0.75);
+        robot._shieldRing = ring;
+        this.tweens.add({ targets: ring, alpha: 0.35, scaleX: 1.08, scaleY: 1.08,
+            duration: 650, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+        robot.once('destroy', () => { if (ring && ring.active) ring.destroy(); });
+    }
+
+    crackShield(robot) {
+        robot.isShielded = false;
+        robot.clearTint();
+        if (robot._shieldRing) {
+            const ring = robot._shieldRing;
+            robot._shieldRing = null;
+            this.tweens.add({ targets: ring, scaleX: 1.6, scaleY: 1.6, alpha: 0,
+                duration: 180, ease: 'Expo.Out', onComplete: () => ring.destroy() });
+        }
+        this.showPopup(robot.x, robot.y - 42, 'SHIELD CRACKED', C.tealS);
+        this.enemyHitFX(robot.x, robot.y, C.teal);
+    }
+
+    hitStop(ms) {
+        if (this._hitStopActive) return;
+        this._hitStopActive = true;
+        this.physics.pause();
+        this.time.delayedCall(ms, () => {
+            if (!this.gamePaused && !this.gameOver && !this.waveCleared) this.physics.resume();
+            this._hitStopActive = false;
+        });
+    }
+
+    faceNearestEnemy(maxDist) {
+        let best = null, bestD = maxDist || W;
+        this.robots.children.entries.forEach(r => {
+            if (!r.active) return;
+            const d = Math.abs(r.x - this.player.x);
+            if (d < bestD) { best = r; bestD = d; }
+        });
+        if (best) this.player.setFlipX(best.x < this.player.x);
+    }
+
     // ── BASIC STRIKE ─────────────────────────────────────────────────────────
     performStrike() {
         this.strikeCD = this.hero.strikeCD;
@@ -2357,16 +2515,22 @@ class PlayScene extends Phaser.Scene {
         let hitRx = px, hitRy = py, hitIsBoss = false, hitIsAdmin = false;
         this.robots.children.entries.forEach(robot => {
             if (!robot.active) return;
-            if (Phaser.Math.Distance.BetweenPoints(this.player, robot) >= this.hero.strikeRange) return;
+            const dist = Phaser.Math.Distance.BetweenPoints(this.player, robot);
+            if (dist >= this.hero.strikeRange) return;
             // Drones can only be hit while player is airborne (at least 50px above ground)
             if (robot.isDrone && this.player.y > GROUND_Y - 110) return;
             if (robot.isShielded && this.hero.id !== 'dachshund') {
-                this.showPopup(robot.x, robot.y - 30, 'SHIELDED', C.tealS);
-                this.enemyHitFX(robot.x, robot.y, C.teal);
-                this.cameras.main.shake(40, 0.003);
-                SFX.shield();
-                this.resetCombo();
-                return;
+                if (this.hasUpgrade('shield_cracker')) {
+                    this.crackShield(robot);
+                    SFX.shield();
+                } else {
+                    this.showPopup(robot.x, robot.y - 30, 'SHIELDED', C.tealS);
+                    this.enemyHitFX(robot.x, robot.y, C.teal);
+                    this.cameras.main.shake(40, 0.003);
+                    SFX.shield();
+                    this.resetCombo();
+                    return;
+                }
             }
             robot.hp--;
             this.cameras.main.shake(70, 0.005);
@@ -2380,6 +2544,10 @@ class PlayScene extends Phaser.Scene {
                 const finalPts = basePts * this.comboMult;
                 this.score += finalPts;
                 this.showPopup(robot.x, robot.y - 40, '+' + finalPts, C.goldS);
+                if (dist > this.hero.strikeRange * 0.78) {
+                    this.score += 25;
+                    this.showPopup(robot.x, robot.y - 62, 'PERFECT +25', C.tealS);
+                }
 
                 if (robot.isDrone) {
                     // Drone death — dramatic explosion with spin/fall
@@ -2402,7 +2570,8 @@ class PlayScene extends Phaser.Scene {
                     this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
                     this.time.delayedCall(1800, () => {
                         saveHS(this.score);
-                        this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score });
+                        saveProgressForWave(20);
+                        this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score, upgrades: this.upgrades });
                     });
                 } else if (robot.isPrime) {
                     // Chronos Prime defeated — victory
@@ -2421,7 +2590,8 @@ class PlayScene extends Phaser.Scene {
                     this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
                     this.time.delayedCall(1400, () => {
                         saveHS(this.score);
-                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score });
+                        saveProgressForWave(11);
+                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score, upgrades: this.upgrades });
                     });
                 } else {
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
@@ -2433,6 +2603,11 @@ class PlayScene extends Phaser.Scene {
                 hitRx = robot.x; hitRy = robot.y;
                 hitIsBoss = robot.isBoss || robot.isPrime || robot.isCognitron; hitIsAdmin = robot.isAdmin;
                 this.enemyHitFX(robot.x, robot.y, this.hero.color);
+                if (!robot.isBoss && !robot.isPrime && !robot.isCognitron && robot.body) {
+                    const knockDir = robot.x >= this.player.x ? 1 : -1;
+                    robot.body.setVelocityX(knockDir * 220);
+                    robot.body.setVelocityY(-80);
+                }
                 robot.setTint(0xff4444);
                 this.time.delayedCall(120, () => { if (robot.active) robot.clearTint(); });
                 SFX.hit();
@@ -2441,6 +2616,7 @@ class PlayScene extends Phaser.Scene {
         });
 
         if (!hit) { SFX.miss(); this.resetCombo(); }
+        else this.hitStop(hitIsBoss ? 70 : 45);
         this.showPopup(px, py - 50, hit ? 'STRIKE!' : 'MISS', hit ? C.goldS : C.orangeS);
         this.strikeEffects(hit, hitRx, hitRy, hitIsBoss, hitIsAdmin);
     }
@@ -3235,7 +3411,8 @@ class PlayScene extends Phaser.Scene {
                     this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
                     this.time.delayedCall(1800, () => {
                         saveHS(this.score);
-                        this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score });
+                        saveProgressForWave(20);
+                        this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score, upgrades: this.upgrades });
                     });
                 } else if (robot.isPrime) {
                     // Prime killed by stomp — trigger victory sequence
@@ -3251,7 +3428,8 @@ class PlayScene extends Phaser.Scene {
                     this.time.delayedCall(100, () => { if (robot.active) robot.destroy(); });
                     this.time.delayedCall(1400, () => {
                         saveHS(this.score);
-                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score });
+                        saveProgressForWave(11);
+                        this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score, upgrades: this.upgrades });
                     });
                 } else {
                     const bx = robot.x, by = robot.y, bf = robot.isBoss, sf = robot.isShielded;
@@ -3276,6 +3454,14 @@ class PlayScene extends Phaser.Scene {
 
         // ── SIDE COLLISION: union damage ──────────────────────────────────
         const dmg = (robot.isCognitron) ? 14 : (robot.isPrime || robot.isBoss) ? 10 : robot.isAdmin ? 6 : robot.isShielded ? 5 : 3;
+        if (this.secondWindReady) {
+            this.secondWindReady = false;
+            this.showPopup(player.x, player.y - 44, 'SECOND WIND!', C.goldS);
+            this.enemyHitFX(robot.x, robot.y, C.gold);
+            SFX.shield();
+            robot.destroy();
+            return;
+        }
         this.unionPct -= dmg;
         this.resetCombo();
         SFX.hurt();
@@ -3289,8 +3475,26 @@ class PlayScene extends Phaser.Scene {
     }
 
     // ── OVERLAYS ─────────────────────────────────────────────────────────────
+    chooseUpgradeOptions() {
+        const pool = Object.keys(UPGRADE_DEFS).filter(id => !this.upgrades.includes(id));
+        if (pool.length <= 3) return pool;
+        return Phaser.Utils.Array.Shuffle(pool).slice(0, 3);
+    }
+
+    advanceAfterWave(nextWave) {
+        if (this.gamePaused) this.physics.resume();
+        const payload = { heroId: this.hero.id, wave: nextWave, score: this.score, upgrades: this.upgrades };
+        if      (nextWave === 4)  this.scene.start('StoryScene', Object.assign({ beatIndex: 0 }, payload));
+        else if (nextWave === 7)  this.scene.start('StoryScene', Object.assign({ beatIndex: 1 }, payload));
+        else if (nextWave === 11) this.scene.start('StoryScene', Object.assign({ beatIndex: 2 }, payload));
+        else if (nextWave === 14) this.scene.start('StoryScene', Object.assign({ beatIndex: 3 }, payload));
+        else if (nextWave === 17) this.scene.start('StoryScene', Object.assign({ beatIndex: 4 }, payload));
+        else                      this.scene.start('HeroSelectScene', { wave: nextWave, score: this.score, upgrades: this.upgrades });
+    }
+
     showWaveCleared() {
-        const bonus = Math.floor(this.unionPct / 10) * 50;
+        const baseBonus = Math.floor(this.unionPct / 10) * 50;
+        const bonus = this.upgrades.includes('union_momentum') ? Math.round(baseBonus * 1.1) : baseBonus;
         this.score += bonus;
         SFX.waveClear();
         saveHS(this.score);
@@ -3304,7 +3508,8 @@ class PlayScene extends Phaser.Scene {
             this.cameras.main.flash(400, 255, 200, 0);
             this.time.delayedCall(1400, () => {
                 saveHS(this.score);
-                this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score });
+                saveProgressForWave(20);
+                this.scene.start('StoryScene', { beatIndex: 5, heroId: this.hero.id, wave: this.wave, score: this.score, upgrades: this.upgrades });
             });
             return;
         }
@@ -3316,17 +3521,21 @@ class PlayScene extends Phaser.Scene {
             if (this.primeHPLbl) { this.primeHPLbl.destroy(); this.primeHPLbl = null; }
             this.cameras.main.shake(400, 0.02);
             this.time.delayedCall(1000, () => {
-                this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score });
+                saveProgressForWave(11);
+                this.scene.start('StoryScene', { beatIndex: 2, heroId: this.hero.id, wave: this.wave + 1, score: this.score, upgrades: this.upgrades });
             });
             return;
         }
 
         const nextWave = this.wave + 1;
+        saveProgressForWave(Math.min(nextWave, 20));
+        const options = this.chooseUpgradeOptions();
 
-        this.add.rectangle(W / 2, H / 2, 460, 230, C.dark, 0.93).setDepth(20).setStrokeStyle(1, C.gold);
-        this.add.text(W / 2, H / 2 - 82, '— WAVE CLEARED —',    { fontSize: '26px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
-        this.add.text(W / 2, H / 2 - 36, 'Score: ' + this.score, { fontSize: '20px', fill: C.creamS }).setOrigin(0.5).setDepth(21);
-        this.add.text(W / 2, H / 2 + 4,  'Morale Bonus: +' + bonus, { fontSize: '14px', fill: C.tealS }).setOrigin(0.5).setDepth(21);
+        this.add.rectangle(W / 2, H / 2, 700, 310, C.dark, 0.94).setDepth(20).setStrokeStyle(1, C.gold);
+        this.add.text(W / 2, H / 2 - 132, '— WAVE CLEARED —',    { fontSize: '25px', fill: C.goldS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
+        this.add.text(W / 2, H / 2 - 96, 'Score: ' + this.score + '     Morale Bonus: +' + bonus, {
+            fontSize: '15px', fill: C.creamS
+        }).setOrigin(0.5).setDepth(21);
 
         const nextLabel = (nextWave === 4)  ? 'TAP  or  SPACE → The March to City Hall...'
                         : (nextWave === 7)  ? 'TAP  or  SPACE → Into the Rotunda...'
@@ -3334,25 +3543,58 @@ class PlayScene extends Phaser.Scene {
                         : (nextWave === 14) ? 'TAP  or  SPACE → The Inner Sanctum...'
                         : (nextWave === 17) ? 'TAP  or  SPACE → The Final Floor...'
                         : 'TAP  or  SPACE → Next Wave';
-        this.add.text(W / 2, H / 2 + 74, nextLabel, { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
 
         let advanced = false;
-        const advance = () => {
+        const finish = (upgradeId) => {
             if (advanced) return;
             advanced = true;
-            this.input.keyboard.off('keydown-SPACE', advance);
-            this.input.off('pointerdown', advance);
-            // Always resume physics before leaving so the next scene starts unpaused
-            if (this.gamePaused) this.physics.resume();
-            if      (nextWave === 4)  this.scene.start('StoryScene',     { beatIndex: 0, heroId: this.hero.id, wave: nextWave, score: this.score });
-            else if (nextWave === 7)  this.scene.start('StoryScene',     { beatIndex: 1, heroId: this.hero.id, wave: nextWave, score: this.score });
-            else if (nextWave === 11) this.scene.start('StoryScene',     { beatIndex: 2, heroId: this.hero.id, wave: nextWave, score: this.score });
-            else if (nextWave === 14) this.scene.start('StoryScene',     { beatIndex: 3, heroId: this.hero.id, wave: nextWave, score: this.score });
-            else if (nextWave === 17) this.scene.start('StoryScene',     { beatIndex: 4, heroId: this.hero.id, wave: nextWave, score: this.score });
-            else                      this.scene.start('HeroSelectScene', { wave: nextWave, score: this.score });
+            if (upgradeId && !this.upgrades.includes(upgradeId)) this.upgrades = this.upgrades.concat(upgradeId);
+            this.input.keyboard.off('keydown-ONE', choose1);
+            this.input.keyboard.off('keydown-TWO', choose2);
+            this.input.keyboard.off('keydown-THREE', choose3);
+            this.input.keyboard.off('keydown-SPACE', skip);
+            this.input.off('pointerdown', skip);
+            this.advanceAfterWave(nextWave);
         };
-        this.input.keyboard.once('keydown-SPACE', advance);
-        this.input.once('pointerdown', advance);
+
+        const choose1 = () => finish(options[0]);
+        const choose2 = () => finish(options[1]);
+        const choose3 = () => finish(options[2]);
+        const skip = () => { if (options.length === 0) finish(null); };
+
+        if (options.length) {
+            this.add.text(W / 2, H / 2 - 64, 'CHOOSE A RUN UPGRADE', {
+                fontSize: '13px', fill: C.tealS, letterSpacing: 3
+            }).setOrigin(0.5).setDepth(21);
+            options.forEach((id, i) => {
+                const def = UPGRADE_DEFS[id];
+                const cx = W / 2 - 220 + i * 220;
+                const card = this.add.rectangle(cx, H / 2 + 8, 190, 110, 0x160f20, 0.96)
+                    .setDepth(21).setStrokeStyle(1, C.gold).setInteractive({ useHandCursor: true });
+                this.add.text(cx, H / 2 - 32, '[' + (i + 1) + '] ' + def.name, {
+                    fontSize: '12px', fill: C.goldS, fontStyle: 'bold', align: 'center'
+                }).setOrigin(0.5).setDepth(22);
+                this.add.text(cx, H / 2 + 8, def.desc, {
+                    fontSize: '11px', fill: C.creamS, align: 'center', wordWrap: { width: 150 }
+                }).setOrigin(0.5).setDepth(22);
+                card.on('pointerdown', () => finish(id));
+                card.on('pointerover', () => card.setStrokeStyle(2, C.teal));
+                card.on('pointerout',  () => card.setStrokeStyle(1, C.gold));
+            });
+            this.input.keyboard.once('keydown-ONE', choose1);
+            this.input.keyboard.once('keydown-TWO', choose2);
+            this.input.keyboard.once('keydown-THREE', choose3);
+            this.add.text(W / 2, H / 2 + 118, nextLabel.replace('TAP  or  SPACE → ', 'After upgrade: '), {
+                fontSize: '12px', fill: C.goldS
+            }).setOrigin(0.5).setDepth(21);
+        } else {
+            this.add.text(W / 2, H / 2 - 10, 'ALL RUN UPGRADES ACTIVE', {
+                fontSize: '18px', fill: C.tealS, fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(21);
+            this.add.text(W / 2, H / 2 + 74, nextLabel, { fontSize: '13px', fill: C.goldS }).setOrigin(0.5).setDepth(21);
+            this.input.keyboard.once('keydown-SPACE', skip);
+            this.input.once('pointerdown', skip);
+        };
     }
 
     showGameOver() {
@@ -3360,6 +3602,7 @@ class PlayScene extends Phaser.Scene {
         const prevBest = getHS();
         const isNewHS  = this.score > prevBest;
         saveHS(this.score);
+        saveProgressForWave(this.wave);
         const displayHS = isNewHS ? this.score : prevBest;
         this.add.rectangle(W / 2, H / 2, 460, 270, C.dark, 0.94).setDepth(20).setStrokeStyle(1, C.crimson);
         this.add.text(W / 2, H / 2 - 95, '— UNION BROKEN —',          { fontSize: '26px', fill: C.crimsonS, fontStyle: 'bold' }).setOrigin(0.5).setDepth(21);
@@ -3382,7 +3625,7 @@ class PlayScene extends Phaser.Scene {
     createTouchButtons() {
         const scaleFactor = this.scale.displayScale.x;
         // Aim for ~44px physical touch target; clamp to minimum 24 game units to avoid overlap
-        const r = Math.max(24, Math.round(44 / (2 * scaleFactor)));
+        const r = Math.max(28, Math.round(52 / (2 * scaleFactor)));
         const y = H - 38;
         const makeBtn = (x, label, onDown, onUp) => {
             const g = this.add.graphics().setDepth(50).setScrollFactor(0);
@@ -3397,7 +3640,7 @@ class PlayScene extends Phaser.Scene {
                 g.strokeCircle(x, y, r);
             };
             draw(false);
-            zone.on('pointerdown',   () => { draw(true);  onDown(); });
+            zone.on('pointerdown',   () => { this._lastControlPointerTime = this.time.now; draw(true);  onDown(); });
             zone.on('pointerup',     () => { draw(false); onUp();   });
             zone.on('pointerout',    () => { draw(false); onUp();   });
             zone.on('pointercancel', () => { draw(false); onUp();   });

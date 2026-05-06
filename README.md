@@ -133,4 +133,4 @@ An art Decco motif (see the files )
 
 Nostalgic but detailed iconic of post depression era but early union organization and workers rights in the us.
 
-A story with graphic novel type paneling unfolds as levels are achieved telling a story of how our hero’s (the adorable worker dogs) are able to break through the factory and the guards to join the picket lines. Slow the means of production and the storm city hall.
+A story with graphic novel type paneling unfolds as levels are achieved telling a story of how our hero’s (twww.he adorable worker dogs) are able to break through the factory and the guards to join the picket lines. Slow the means of production and the storm city hall.
