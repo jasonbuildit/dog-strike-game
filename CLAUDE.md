@@ -25,9 +25,16 @@ BootScene → TitleScene → HeroSelectScene → PlayScene
 
 - **BootScene** — preloads image assets; falls back to generated colored rectangles for any missing file (graceful degradation pattern used everywhere)
 - **TitleScene** — static title card, press SPACE to start
-- **HeroSelectScene** — pick hero; heroes unlock at wave 4 (Shepherd) and wave 7 (Dachshund); receives `{ wave, score }` so progress persists across waves
-- **StoryScene** — graphic novel panels between level arcs; `beatIndex` 0 = Factory arc end, 1 = City Hall arc beginning
-- **PlayScene** — main gameplay; receives `{ heroId, wave, score, level }` where `level` is `'factory'` or `'cityhall'`
+- **HeroSelectScene** — pick hero; heroes unlock at wave 4 (Shepherd) and wave 7 (Dachshund); receives `{ wave, score, upgrades }` so progress persists across waves
+- **StoryScene** — graphic novel panels between level arcs; `beatIndex` 0 = Factory arc end, 1 = City Hall arc beginning, 2 = Chronos Prime victory, 3+ = HQ arc beats. Each beat picks its own background and renders panel art via `drawPanelArt(beatIndex)`; pre-rendered images can override procedural art via the `PANEL_IMGS[beatIndex + '_' + panelIndex]` lookup
+- **PlayScene** — main gameplay; receives `{ heroId, wave, score, level, upgrades }` where `level` is `'factory'` or `'cityhall'`
+
+**Persistence (localStorage):**
+
+- `dogstrike_mute` — audio mute flag
+- `HS_KEY` — high score (`getHS` / `saveHS`)
+- `PROGRESS_KEY` — JSON blob of `{ wave, score, upgrades, ... }` written between scene transitions so the player resumes mid-run on reload
+- `applyUpgradeMods(hero, upgrades)` mutates a clone of the `HEROES` config (e.g., `longer_strike` adds 20 to `strikeRange`, `quick_special` shaves 15% off `powerCD`). Always pass the cloned hero object into PlayScene — never mutate `HEROES` directly.
 
 **Global constants and shared state:**
 
@@ -57,10 +64,14 @@ assets/
   dogs/       — hero sprites (saint, shepherd, dachshund + alternates)
   bads/       — enemy sprites (enforcer, heavy, admin, boss)
   background/ — level backgrounds (bg_factory_a–d, bg_cityhall_a–c, plus one original)
+  story/      — pre-rendered story panel images (story_factory, story_cityhall, story_hq, story_march, story_solidarity, story_fight, story_boss, story_victory)
 images/       — Gemini-generated concept art (not used in-game)
+tools/        — Python utilities to generate/assemble sprite frames; outputs land in tools/generated/ and assets/dogs/
 ```
 
 Background keys are rotated per wave in `PlayScene.init()` to vary visual feel without adding scenes.
+
+Touch input: TitleScene detects mobile (`this.sys.game.device.input.touch`) and requests fullscreen on tap. PlayScene exposes a touch-strike control; if you add new input paths, wire them through the same handlers as keyboard so both stay in sync.
 
 ## Key Design Patterns
 
@@ -76,7 +87,9 @@ Always check initialization order when adding new game systems — ensure depend
 
 ## Deployment
 
-`deploy.sh` syncs assets to S3 and invalidates the CloudFront cache. Before running it, verify AWS credentials are active:
+`deploy.sh` deploys the CloudFormation stack defined in `infra.yaml` (S3 + CloudFront + ACM + Route53 in `us-east-1`), syncs `assets/` with a 1-year immutable cache, uploads `dogstrike.html` with a 5-minute cache, and invalidates CloudFront. Stack name: `dogsonstrike-game`. The site is `https://dogsonstrike.com`.
+
+Before running, verify AWS credentials are active:
 
 ```bash
 aws sts get-caller-identity
@@ -84,3 +97,4 @@ aws sts get-caller-identity
 
 If expired, re-authenticate first. The deploy script will fail silently-ish otherwise.
 
+`us-east-1` is required because CloudFront only accepts ACM certs from that region — do not change it.
